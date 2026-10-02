@@ -3,8 +3,9 @@ package backtest
 import (
 	"time"
 
+	"bot/internal/accounting"
 	"bot/internal/candle"
-	"bot/internal/data"
+	"bot/internal/market"
 )
 
 type position struct {
@@ -25,7 +26,7 @@ func (p *position) markPnL(price float64) float64 {
 
 // Run — прогон стратегии по свечам. Исполнение: по закрытию сигнальной свечи
 // с проскальзыванием. Стоп: срабатывает при касании внутри следующих свечей.
-func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Funding) *Report {
+func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []market.Funding) *Report {
 	rep := &Report{Config: cfg, FinalEquity: cfg.StartEquity}
 	if len(candles) == 0 {
 		return rep
@@ -65,9 +66,9 @@ func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Fun
 			return
 		}
 		fill := applySlippage(price, -pos.dir, cfg.SlippagePct)
-		exitFee := fill * pos.qty * cfg.TakerFeePct
+		exitFee := accounting.Fee(fill, pos.qty, cfg.TakerFeePct)
 		pos.fees += exitFee
-		gross := float64(pos.dir) * (fill - pos.entryPrice) * pos.qty
+		gross := accounting.Gross(pos.dir, pos.entryPrice, fill, pos.qty)
 		pnl := gross - pos.fees + pos.funding
 		equity += pnl
 		rep.Trades = append(rep.Trades, Trade{
@@ -127,20 +128,16 @@ func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Fun
 			if dir != 0 && active(c.Time) {
 				// сайзинг от риска: qty = equity*risk / stopDist
 				entry := applySlippage(c.C, dir, cfg.SlippagePct)
-				stopDist := entry * 0.02 // дефолт 2%, если стоп не задан
-				if stopPrice > 0 {
-					d := abs(entry - stopPrice)
-					if d > 0 {
-						stopDist = d
+				stopDist := accounting.StopDistance(entry, stopPrice)
+				qty := accounting.Quantity(equity, cfg.RiskPct, stopDist)
+				if qty > 0 {
+					entryFee := accounting.Fee(entry, qty, cfg.TakerFeePct)
+					pos = &position{
+						dir: dir, qty: qty, entryPrice: entry,
+						entryTime: c.Time, stop: stopPrice, take: takePrice, fees: entryFee,
 					}
+					notify(dir, "")
 				}
-				qty := equity * cfg.RiskPct / stopDist
-				entryFee := entry * qty * cfg.TakerFeePct
-				pos = &position{
-					dir: dir, qty: qty, entryPrice: entry,
-					entryTime: c.Time, stop: stopPrice, take: takePrice, fees: entryFee,
-				}
-				notify(dir, "")
 			}
 		}
 
@@ -182,7 +179,7 @@ func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Fun
 
 func applySlippage(price float64, dir int, slipPct float64) float64 {
 	// покупка дороже, продажа дешевле
-	return price * (1 + float64(dir)*slipPct)
+	return accounting.Slippage(price, dir, slipPct)
 }
 
 func abs(x float64) float64 {

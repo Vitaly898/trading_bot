@@ -1,5 +1,6 @@
 // portfolio — прогон стратегии на корзине символов с общим капиталом.
-//   go run ./cmd/portfolio -config configs/portfolio_4h.yaml
+//
+//	go run ./cmd/portfolio -config configs/portfolio_4h.yaml
 package main
 
 import (
@@ -8,13 +9,12 @@ import (
 	"log"
 	"os"
 	"sort"
-	"strings"
 	"text/tabwriter"
+	"time"
 
 	"bot/internal/backtest"
 	"bot/internal/config"
-	"bot/internal/store"
-	"bot/internal/strategy"
+	"bot/internal/experiment"
 )
 
 func main() {
@@ -31,58 +31,13 @@ func main() {
 		log.Fatal("в конфиге нет symbols")
 	}
 
-	db, err := store.Open(cc.DB)
+	ds, err := experiment.Open(cc)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
-
-	var ds []backtest.SymbolData
-	for _, s := range cc.Symbols {
-		sym := strings.ToUpper(s)
-		candles, err := db.LoadKlines(sym, cc.TF)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if len(candles) == 0 {
-			log.Printf("⚠️  %s: нет свечей %s — пропускаю", sym, cc.TF)
-			continue
-		}
-		funding, err := db.LoadFunding(sym)
-		if err != nil {
-			log.Fatal(err)
-		}
-		ds = append(ds, backtest.SymbolData{Symbol: sym, Candles: candles, Funding: funding})
-		log.Printf("%s: %d свечей (%s .. %s), funding %d",
-			sym, len(candles),
-			candles[0].Time.Format("2006-01-02"), candles[len(candles)-1].Time.Format("2006-01-02"),
-			len(funding))
-	}
-
-	cfg := backtest.PortfolioConfig{
-		Config: backtest.Config{
-			Symbol: "PORTFOLIO", TF: cc.TF,
-			StartEquity: cc.Equity, RiskPct: cc.Risk,
-			TakerFeePct: cc.Fee, SlippagePct: cc.Slip,
-			UseFunding: cc.UseFunding(),
-		},
-		MaxPositions: cc.MaxPositions,
-		MaxTotalRisk: cc.MaxTotalRisk,
-	}
-
-	mk := func(sym string) backtest.Strategy {
-		st, err := strategy.New(cc.Strategy.Name, strategy.Params(cc.Strategy.Params))
-		if err != nil {
-			log.Fatal(err)
-		}
-		return st
-	}
-
-	var rep *backtest.Report
-	if cc.Mode == "split" {
-		rep = backtest.RunSplit(cfg.Config, mk, ds)
-	} else {
-		rep = backtest.RunPortfolio(cfg, mk, ds)
+	rep, err := experiment.Run(cc, ds, time.Time{})
+	if err != nil {
+		log.Fatal(err)
 	}
 	printReport(rep, ds)
 }

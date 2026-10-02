@@ -42,8 +42,8 @@ make wf WF=configs/walkforward/eth_sol_regime.yaml
 ```
 
 Check each configuration's symbol list and load the required data before running it.
-The Makefile sets a Homebrew toolchain path and public Go proxy for the original
-development environment; equivalent `go run ./cmd/<command>` commands can be used.
+The Makefile uses `go` from `PATH`; override it with `make GO=/path/to/go`.
+Equivalent `go run ./cmd/<command>` commands can be used.
 
 ## Paper trading
 
@@ -104,3 +104,47 @@ operator recovery; the runner does not guess the owning RegimeSwitch module.
 Execution/recovery tests use in-memory HTTP transports; no exchange credentials
 or actual orders are needed. Endpoint fields follow the
 [Binance USD-M trade API](https://developers.binance.com/en/docs/catalog/core-trading-derivatives-trading-usd-s-m-futures/api/rest-api/trade).
+
+## Architecture and experiment behavior
+
+- `internal/trading` owns strategy callbacks and recoverable position state. Strategies
+  and live execution do not depend on the historical simulation engine.
+- `internal/market` owns historical records and supported candle intervals. Binance
+  loaders and SQLite adapters use these types; the backtest engine has no loader dependency.
+- `internal/accounting` provides common risk sizing, stop distance, slippage, fees and
+  gross PnL formulas for the backtest engines and local/live execution.
+- Live infrastructure is split into local simulation, the testnet adapter, signed HTTP
+  transport, exchange filters, order lifecycle and reconciliation files.
+- `internal/experiment` loads history through a reader interface and runs fresh strategies
+  using one configuration conversion. Backtest, portfolio, sweep and walk-forward use it.
+
+`mode: shared` uses common portfolio equity, `max_positions` and `max_total_risk`.
+`mode: split` gives each configured symbol an equal initial allocation and runs independent
+sub-portfolios; shared limits do not apply. Sweep and walk-forward now honor this mode,
+so results for existing **split** experiments can change. Single-symbol experiments use
+`cmd/backtest`; a `symbols` list requires `cmd/portfolio`, even for one symbol.
+
+Historical experiments open SQLite in read-only mode. A missing file or missing candles
+for any configured symbol causes an error rather than creating a database or silently
+changing portfolio allocations. Load the complete symbol list using `cmd/loader` first.
+
+YAML loading rejects unknown fields, duplicate keys, null values, extra documents, unknown strategy
+parameters, incorrect parameter types, invalid periods/enums and non-finite numeric values.
+Integer periods cannot contain fractional values; indicator periods must be at least 2
+(`er_period` can be 1). Optional filters can still use zero to disable them. Defaults apply
+only to omitted fields. Parameters in sweep trials receive the same checks as base configs.
+Configuration paths (`base`, `grid`, `db`) remain relative to the current working directory,
+so run CLI commands from `bot/` as before.
+
+Walk-forward requires positive train/test/step sizes, a known metric and a grid in optimize
+mode. Overlapping test windows are rejected because their returns cannot be compounded
+as consecutive out-of-sample results. Optimization fails when no candidate has at least
+five training trades instead of silently using the base strategy. No test window also
+produces an error. These changes expose experiment setup errors before reporting results.
+
+## Automated checks
+
+GitHub Actions runs race tests, vet and builds for both `bot` and `talive` on pushes and
+pull requests. Application Go formatting is checked as well. No API keys or historical
+database are required. Locally run `make check` from `bot/`, and run the same Go checks
+from `talive/`. The application CI compiles all CLI commands, including the paper runner.

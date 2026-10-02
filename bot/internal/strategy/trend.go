@@ -16,22 +16,23 @@ import (
 // Стоп:  atr_mult × ATR от закрытия сигнальной свечи.
 //
 // Параметры (yaml):
-//   ma_type: ema|sma|smma|wma|hma|vwma|kama   (def ema)
-//   fast, slow: int                            (def 20/50)
-//   adx_period: int, adx_min: float            (def 14 / 0=выкл)
-//   ema_filter: int                            (def 0=выкл; long только выше EMA(filter))
-//   exit: signal|supertrend                    (def signal)
-//   st_period, st_mult: для supertrend         (def 10 / 3.0)
-//   atr_period, atr_mult: стоп                 (def 14 / 2.0)
-//   stop_pct, take_pct: float                  (def 0=выкл; фиксированные уровни
-//     в долях от цены: 0.03 = 3%. При stop_pct>0 атр-расчёт игнорируется)
-//   long_short: bool                           (def true; false = только лонг)
-//   funding_long_max: float                    (def 0=выкл; вето на лонг, если funding > порога)
-//   funding_short_min: float                   (def 0=выкл; вето на шорт, если funding < порога)
-//     Пороги в долях: 0.0003 = 0.03% за 8ч. Логика MM-фильтра: экстремальный
-//     положительный funding = толпа в лонгах → не встаём на её стороне.
-//   tp_r: float                                (def 0=без тейка; тейк = tp_r × stopDist,
-//     где stopDist = atr_mult × ATR. Т.е. тейк кратен риску: tp_r=2 → 2R)
+//
+//	ma_type: ema|sma|smma|wma|hma|vwma|kama   (def ema)
+//	fast, slow: int                            (def 20/50)
+//	adx_period: int, adx_min: float            (def 14 / 0=выкл)
+//	ema_filter: int                            (def 0=выкл; long только выше EMA(filter))
+//	exit: signal|supertrend                    (def signal)
+//	st_period, st_mult: для supertrend         (def 10 / 3.0)
+//	atr_period, atr_mult: стоп                 (def 14 / 2.0)
+//	stop_pct, take_pct: float                  (def 0=выкл; фиксированные уровни
+//	  в долях от цены: 0.03 = 3%. При stop_pct>0 атр-расчёт игнорируется)
+//	long_short: bool                           (def true; false = только лонг)
+//	funding_long_max: float                    (def 0=выкл; вето на лонг, если funding > порога)
+//	funding_short_min: float                   (def 0=выкл; вето на шорт, если funding < порога)
+//	  Пороги в долях: 0.0003 = 0.03% за 8ч. Логика MM-фильтра: экстремальный
+//	  положительный funding = толпа в лонгах → не встаём на её стороне.
+//	tp_r: float                                (def 0=без тейка; тейк = tp_r × stopDist,
+//	  где stopDist = atr_mult × ATR. Т.е. тейк кратен риску: tp_r=2 → 2R)
 type Trend struct {
 	fast, slow talive.Indicator
 	adx        talive.Indicator

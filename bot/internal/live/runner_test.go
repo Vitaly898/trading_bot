@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"bot/internal/backtest"
 	"bot/internal/candle"
+	"bot/internal/trading"
 )
 
 func quietLog() *slog.Logger { return slog.New(slog.NewTextHandler(io.Discard, nil)) }
@@ -28,7 +28,7 @@ type recordingStrategy struct {
 	calls   int
 	signals []int
 	changes []change
-	state   backtest.PositionState
+	state   trading.PositionState
 }
 
 func (s *recordingStrategy) OnCandle(c candle.Candle) (int, float64, float64) {
@@ -47,15 +47,15 @@ func (s *recordingStrategy) OnPositionChange(dir int, reason string) {
 	s.changes = append(s.changes, change{dir, reason})
 	s.state = s.EntryState(dir)
 }
-func (s *recordingStrategy) PositionState() backtest.PositionState { return s.state }
-func (s *recordingStrategy) EntryState(dir int) backtest.PositionState {
+func (s *recordingStrategy) PositionState() trading.PositionState { return s.state }
+func (s *recordingStrategy) EntryState(dir int) trading.PositionState {
 	owner := ""
 	if dir != 0 {
 		owner = "mr"
 	}
-	return backtest.PositionState{Dir: dir, Owner: owner}
+	return trading.PositionState{Dir: dir, Owner: owner}
 }
-func (s *recordingStrategy) RestorePosition(p backtest.PositionState) error { s.state = p; return nil }
+func (s *recordingStrategy) RestorePosition(p trading.PositionState) error { s.state = p; return nil }
 func runnerConfig(path string) RunnerConfig {
 	return RunnerConfig{Symbols: []string{"TEST"}, TF: "1h", RiskPct: 0.01, StatePath: path, StrategyKey: "test"}
 }
@@ -144,7 +144,7 @@ func TestStateRestoresEquityOwnershipWatermarkAndDowntimeBars(t *testing.T) {
 	if err := next.WarmupStrategy("TEST", restored, cs); err != nil {
 		t.Fatal(err)
 	}
-	if restored.state != (backtest.PositionState{Dir: 1, Owner: "mr", BarsIn: 2}) {
+	if restored.state != (trading.PositionState{Dir: 1, Owner: "mr", BarsIn: 2}) {
 		t.Fatalf("restored: %+v", restored.state)
 	}
 	if !next.lastClosed["TEST"].Equal(cs[2].Time) {

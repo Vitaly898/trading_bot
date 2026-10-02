@@ -19,10 +19,11 @@ const (
 // Переход не чаще, чем раз в min_bars свечей (анти-дребезг).
 //
 // Параметры (yaml, префикса нет — живут в params regime_switch):
-//   adx_period: 14, er_period: 20
-//   adx_enter: 25, adx_exit: 20
-//   er_enter: 0.25, er_exit: 0.18
-//   min_bars: 3
+//
+//	adx_period: 14, er_period: 20
+//	adx_enter: 25, adx_exit: 20
+//	er_enter: 0.25, er_exit: 0.18
+//	min_bars: 3
 type RegimeClassifier struct {
 	adx talive.Indicator
 	er  *ER

@@ -1,8 +1,11 @@
 // backtest — прогон стратегии по истории из SQLite.
 // Основной способ: YAML-конфиг.
-//   go run ./cmd/backtest -config configs/trend_4h.yaml
+//
+//	go run ./cmd/backtest -config configs/trend_4h.yaml
+//
 // Быстрый режим без конфига (ema_cross):
-//   go run ./cmd/backtest -tf 4h -strategy ema_cross -fast 20 -slow 50
+//
+//	go run ./cmd/backtest -tf 4h -strategy ema_cross -fast 20 -slow 50
 package main
 
 import (
@@ -10,10 +13,11 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"bot/internal/backtest"
 	"bot/internal/config"
-	"bot/internal/store"
+	"bot/internal/experiment"
 	"bot/internal/strategy"
 )
 
@@ -34,69 +38,38 @@ func main() {
 	noFunding := flag.Bool("no-funding", false, "не учитывать funding rate")
 	flag.Parse()
 
-	var (
-		sym       string
-		timeframe string
-		dbFile    string
-		cfg       backtest.Config
-		strat     backtest.Strategy
-		err       error
-	)
-
+	var cc *config.Config
+	var err error
 	if *configPath != "" {
-		var cc *config.Config
 		cc, err = config.Load(*configPath)
 		if err != nil {
 			log.Fatal(err)
 		}
-		sym, timeframe, dbFile = strings.ToUpper(cc.Symbol), cc.TF, cc.DB
-		cfg = backtest.Config{
-			Symbol: sym, TF: timeframe,
-			StartEquity: cc.Equity, RiskPct: cc.Risk,
-			TakerFeePct: cc.Fee, SlippagePct: cc.Slip,
-			UseFunding: cc.UseFunding(),
+		if len(cc.Symbols) > 0 {
+			log.Fatal("use cmd/portfolio for symbols configuration")
 		}
-		strat, err = strategy.New(cc.Strategy.Name, strategy.Params(cc.Strategy.Params))
-		if err != nil {
-			log.Fatal(err)
-		}
-		log.Printf("Конфиг: %s | стратегия %s %v", *configPath, cc.Strategy.Name, cc.Strategy.Params)
 	} else {
-		sym, timeframe, dbFile = strings.ToUpper(*symbol), *tf, *dbPath
-		cfg = backtest.Config{
-			Symbol: sym, TF: timeframe,
-			StartEquity: *equity, RiskPct: *risk,
-			TakerFeePct: *fee, SlippagePct: *slip,
-			UseFunding: !*noFunding,
+		funding := !*noFunding
+		cc = &config.Config{Symbol: strings.ToUpper(*symbol), TF: *tf, DB: *dbPath, Equity: *equity, Risk: *risk, Fee: *fee, Slip: *slip, Funding: &funding}
+		cc.Strategy.Name = *stratName
+		if *stratName == "ema_cross" || *stratName == "trend" {
+			cc.Strategy.Params = map[string]any{"fast": *fast, "slow": *slow}
 		}
-		strat, err = strategy.New(*stratName, strategy.Params{
-			"fast": *fast, "slow": *slow,
-		})
-		if err != nil {
+		if err := cc.Validate(); err != nil {
 			log.Fatal(err)
 		}
 	}
-
-	db, err := store.Open(dbFile)
+	ds, err := experiment.Open(cc)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer db.Close()
-
-	candles, err := db.LoadKlines(sym, timeframe)
+	rep, err := experiment.Run(cc, ds, time.Time{})
 	if err != nil {
 		log.Fatal(err)
 	}
-	if len(candles) == 0 {
-		log.Fatalf("нет свечей %s %s в %s — сначала запусти loader", sym, timeframe, dbFile)
-	}
-	funding, err := db.LoadFunding(sym)
-	if err != nil {
-		log.Fatal(err)
-	}
+	cs := ds[0].Candles
+	printReport(rep, cs[0].C, cs[len(cs)-1].C)
 
-	rep := backtest.Run(cfg, strat, candles, funding)
-	printReport(rep, candles[0].C, candles[len(candles)-1].C)
 }
 
 func printReport(r *backtest.Report, firstClose, lastClose float64) {

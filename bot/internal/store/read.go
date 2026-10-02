@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"bot/internal/candle"
-	"bot/internal/data"
+	"bot/internal/market"
 )
 
 // LoadKlines — свечи символа/ТФ из базы, отсортированные по времени.
@@ -29,17 +29,17 @@ func (d *DB) LoadKlines(symbol, tf string) ([]candle.Candle, error) {
 }
 
 // LoadFunding — записи funding rate символа, отсортированные по времени.
-func (d *DB) LoadFunding(symbol string) ([]data.Funding, error) {
+func (d *DB) LoadFunding(symbol string) ([]market.Funding, error) {
 	rows, err := d.conn.Query(`SELECT calc_time, rate
 		FROM funding WHERE symbol = ? ORDER BY calc_time`, symbol)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []data.Funding
+	var out []market.Funding
 	for rows.Next() {
 		var ts int64
-		var f data.Funding
+		var f market.Funding
 		if err := rows.Scan(&ts, &f.Rate); err != nil {
 			return nil, err
 		}

@@ -9,23 +9,23 @@ import (
 	"slices"
 	"time"
 
-	"bot/internal/backtest"
+	"bot/internal/trading"
 )
 
 const stateVersion = 1
 
 type stateSnapshot struct {
-	Version        int                               `json:"version"`
-	Mode           string                            `json:"mode"`
-	TF             string                            `json:"tf"`
-	Symbols        []string                          `json:"symbols"`
-	StrategyKey    string                            `json:"strategy_key"`
-	UpdatedAt      time.Time                         `json:"updated_at"`
-	Equity         *float64                          `json:"equity,omitempty"`
-	Positions      map[string]*Position              `json:"positions"`
-	LastClosed     map[string]time.Time              `json:"last_closed"`
-	EntryBars      map[string]time.Time              `json:"entry_bars"`
-	StrategyStates map[string]backtest.PositionState `json:"strategy_states"`
+	Version        int                              `json:"version"`
+	Mode           string                           `json:"mode"`
+	TF             string                           `json:"tf"`
+	Symbols        []string                         `json:"symbols"`
+	StrategyKey    string                           `json:"strategy_key"`
+	UpdatedAt      time.Time                        `json:"updated_at"`
+	Equity         *float64                         `json:"equity,omitempty"`
+	Positions      map[string]*Position             `json:"positions"`
+	LastClosed     map[string]time.Time             `json:"last_closed"`
+	EntryBars      map[string]time.Time             `json:"entry_bars"`
+	StrategyStates map[string]trading.PositionState `json:"strategy_states"`
 }
 
 func (r *Runner) LoadState() error {

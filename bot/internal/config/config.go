@@ -3,26 +3,29 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
+	"strings"
 
-	"gopkg.in/yaml.v3"
+	"bot/internal/market"
+	"bot/internal/strategy"
 )
 
 // Config — полное описание одного прогона бэктеста.
 type Config struct {
-	Symbol  string  `yaml:"symbol"`
-	Symbols []string `yaml:"symbols"` // портфельный режим (cmd/portfolio)
-	MaxPositions int `yaml:"max_positions"` // лимит одновременных позиций (0 = без лимита)
-	MaxTotalRisk float64 `yaml:"max_total_risk"` // бюджет риска портфеля, доля equity (0 = без лимита)
-	Mode string `yaml:"mode"` // shared (общий капитал+лимиты, дефолт) | split (равные суб-портфели)
-	Leverage int `yaml:"leverage"` // плечо на фьючерсах (0/1 = 1x; только live-режим)
-	TF      string  `yaml:"tf"`
-	DB      string  `yaml:"db"`
-	Equity  float64 `yaml:"equity"`
-	Risk    float64 `yaml:"risk"`
-	Fee     float64 `yaml:"fee"`
-	Slip    float64 `yaml:"slip"`
-	Funding *bool   `yaml:"funding"` // по умолчанию true
+	Symbol       string   `yaml:"symbol"`
+	Symbols      []string `yaml:"symbols"`        // портфельный режим (cmd/portfolio)
+	MaxPositions int      `yaml:"max_positions"`  // лимит одновременных позиций (0 = без лимита)
+	MaxTotalRisk float64  `yaml:"max_total_risk"` // бюджет риска портфеля, доля equity (0 = без лимита)
+	Mode         string   `yaml:"mode"`           // shared (общий капитал+лимиты, дефолт) | split (равные суб-портфели)
+	Leverage     int      `yaml:"leverage"`       // плечо на фьючерсах (0/1 = 1x; только live-режим)
+	TF           string   `yaml:"tf"`
+	DB           string   `yaml:"db"`
+	Equity       float64  `yaml:"equity"`
+	Risk         float64  `yaml:"risk"`
+	Fee          float64  `yaml:"fee"`
+	Slip         float64  `yaml:"slip"`
+	Funding      *bool    `yaml:"funding"` // по умолчанию true
 
 	Strategy struct {
 		Name   string         `yaml:"name"`
@@ -48,15 +51,79 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg := defaults()
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	if err := decode(data, &cfg); err != nil {
 		return nil, fmt.Errorf("парсинг %s: %w", path, err)
 	}
-	if cfg.Strategy.Name == "" {
-		return nil, fmt.Errorf("%s: не задан strategy.name", path)
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &cfg, nil
 }
 
 func (c *Config) UseFunding() bool {
 	return c.Funding == nil || *c.Funding
+}
+
+// Validate is shared by YAML loading, CLI flags and experiment overrides.
+func (c *Config) Validate() error {
+	if c.Mode == "" {
+		c.Mode = "shared"
+	}
+	if c.Mode != "shared" && c.Mode != "split" {
+		return fmt.Errorf("mode must be shared or split")
+	}
+	if _, err := market.Interval(c.TF); err != nil {
+		return err
+	}
+
+	if strings.TrimSpace(c.DB) == "" {
+		return fmt.Errorf("db must not be empty")
+	}
+	c.Symbol = strings.ToUpper(strings.TrimSpace(c.Symbol))
+	seen := map[string]bool{}
+	syms := c.Symbols
+	if len(syms) == 0 {
+		syms = []string{c.Symbol}
+	}
+	for i, s := range syms {
+		s = strings.ToUpper(strings.TrimSpace(s))
+		if s == "" || seen[s] {
+			return fmt.Errorf("empty or duplicate symbol %q", s)
+		}
+		for _, ch := range s {
+			if !(ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9') {
+				return fmt.Errorf("invalid symbol %q", s)
+			}
+		}
+		seen[s] = true
+		if len(c.Symbols) > 0 {
+			c.Symbols[i] = s
+		}
+	}
+	for key, n := range map[string]float64{"equity": c.Equity, "risk": c.Risk, "fee": c.Fee, "slip": c.Slip, "max_total_risk": c.MaxTotalRisk} {
+		if math.IsNaN(n) || math.IsInf(n, 0) || n < 0 {
+			return fmt.Errorf("%s must be finite and nonnegative", key)
+		}
+	}
+	if c.Equity <= 0 || c.Risk <= 0 || c.Risk > 1 || c.Fee >= 1 || c.Slip >= 1 || c.MaxTotalRisk > 1 {
+		return fmt.Errorf("equity must be positive; risk in (0,1]; fee/slip in [0,1); max_total_risk in [0,1]")
+	}
+	if c.MaxPositions < 0 || c.Leverage < 0 || c.Leverage > 125 {
+		return fmt.Errorf("invalid max_positions or leverage")
+	}
+	return strategy.Validate(c.Strategy.Name, strategy.Params(c.Strategy.Params))
+}
+
+// WithParams copies configuration so sweep trials cannot mutate the base.
+func (c *Config) WithParams(overrides map[string]any) (*Config, error) {
+	next := *c
+	next.Symbols = append([]string(nil), c.Symbols...)
+	next.Strategy.Params = map[string]any{}
+	for k, v := range c.Strategy.Params {
+		next.Strategy.Params[k] = v
+	}
+	for k, v := range overrides {
+		next.Strategy.Params[k] = v
+	}
+	return &next, next.Validate()
 }

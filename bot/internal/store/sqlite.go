@@ -4,9 +4,12 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"net/url"
+	"os"
+	"path/filepath"
 	"time"
 
-	"bot/internal/data"
+	"bot/internal/market"
 
 	_ "modernc.org/sqlite"
 )
@@ -53,7 +56,7 @@ CREATE TABLE IF NOT EXISTS funding (
 	return err
 }
 
-func (d *DB) InsertKlines(symbol, tf string, ks []data.Kline) (int, error) {
+func (d *DB) InsertKlines(symbol, tf string, ks []market.Kline) (int, error) {
 	tx, err := d.conn.Begin()
 	if err != nil {
 		return 0, err
@@ -82,7 +85,7 @@ func (d *DB) InsertKlines(symbol, tf string, ks []data.Kline) (int, error) {
 	return n, tx.Commit()
 }
 
-func (d *DB) InsertFunding(symbol string, fs []data.Funding) (int, error) {
+func (d *DB) InsertFunding(symbol string, fs []market.Funding) (int, error) {
 	tx, err := d.conn.Begin()
 	if err != nil {
 		return 0, err
@@ -191,24 +194,28 @@ func (d *DB) FundingStats(symbol string) (*FundingStats, error) {
 	return st, nil
 }
 
-func tfDuration(tf string) (time.Duration, error) {
-	if len(tf) < 2 {
-		return 0, fmt.Errorf("bad tf %q", tf)
+func tfDuration(tf string) (time.Duration, error) { return market.Interval(tf) }
+
+// OpenReadOnly refuses missing history instead of creating an empty database.
+func OpenReadOnly(path string) (*DB, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
 	}
-	n := 0
-	if _, err := fmt.Sscanf(tf, "%d", &n); err != nil {
-		return 0, err
+	if _, err := os.Stat(absolute); err != nil {
+		return nil, fmt.Errorf("history database: %w", err)
 	}
-	unit := tf[len(tf)-1]
-	switch unit {
-	case 'm':
-		return time.Duration(n) * time.Minute, nil
-	case 'h':
-		return time.Duration(n) * time.Hour, nil
-	case 'd':
-		return time.Duration(n) * 24 * time.Hour, nil
-	case 'w':
-		return time.Duration(n) * 7 * 24 * time.Hour, nil
+	u := url.URL{Scheme: "file", Path: absolute}
+	q := u.Query()
+	q.Set("mode", "ro")
+	u.RawQuery = q.Encode()
+	conn, err := sql.Open("sqlite", u.String())
+	if err != nil {
+		return nil, err
 	}
-	return 0, fmt.Errorf("unknown tf unit %q", tf)
+	if err := conn.Ping(); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	return &DB{conn: conn}, nil
 }

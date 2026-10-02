@@ -12,25 +12,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"bot/internal/market"
 )
 
 const baseURL = "https://data.binance.vision/data/futures/um/monthly"
 
-// Kline — одна свеча OHLCV.
-type Kline struct {
-	OpenTime time.Time
-	Open     float64
-	High     float64
-	Low      float64
-	Close    float64
-	Volume   float64
-}
-
-// Funding — одна запись funding rate.
-type Funding struct {
-	CalcTime time.Time
-	Rate     float64
-}
+type Kline = market.Kline
+type Funding = market.Funding
 
 var httpClient = &http.Client{Timeout: 60 * time.Second}
 

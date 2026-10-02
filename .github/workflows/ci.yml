@@ -1,0 +1,33 @@
+name: Go checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module: [bot, talive]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - name: Format
+        if: matrix.module == 'bot'
+        working-directory: ${{ matrix.module }}
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then echo "$files"; exit 1; fi
+      - name: Test
+        working-directory: ${{ matrix.module }}
+        run: go test -race ./...
+      - name: Vet
+        working-directory: ${{ matrix.module }}
+        run: go vet ./...
+      - name: Build
+        working-directory: ${{ matrix.module }}
+        run: go build ./...

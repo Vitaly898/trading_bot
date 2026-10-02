@@ -1,6 +1,7 @@
 // loader — скачивает историю (klines + funding) с data.binance.vision в SQLite.
 // Пример:
-//   go run ./cmd/loader -symbol BTCUSDT -tfs 15m,1h,4h -from 2024-01 -to 2025-09 -db history.db
+//
+//	go run ./cmd/loader -symbol BTCUSDT -tfs 15m,1h,4h -from 2024-01 -to 2025-09 -db history.db
 package main
 
 import (
@@ -19,7 +20,7 @@ func parseMonth(s string) (data.Month, error) {
 	if err != nil {
 		return data.Month{}, fmt.Errorf("месяц в формате YYYY-MM: %w", err)
 	}
-	return data.Month{t.Year(), t.Month()}, nil
+	return data.Month{Year: t.Year(), Month: t.Month()}, nil
 }
 
 func main() {
@@ -38,7 +39,7 @@ func main() {
 	var toM data.Month
 	if *to == "" {
 		prev := time.Now().UTC().AddDate(0, -1, 0) // текущий месяц может быть неполным
-		toM = data.Month{prev.Year(), prev.Month()}
+		toM = data.Month{Year: prev.Year(), Month: prev.Month()}
 	} else {
 		toM, err = parseMonth(*to)
 		if err != nil {

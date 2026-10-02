@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"bot/internal/data"
+	"bot/internal/market"
 )
 
 func TestPortfolioMarksAllSymbolsAtTimestamp(t *testing.T) {
@@ -28,7 +28,7 @@ func TestPortfolioAccruedCostsAndFinalClose(t *testing.T) {
 	cfg := testConfig()
 	cfg.TakerFeePct, cfg.UseFunding = 0.001, true
 	cs := bars(100, 100, 100)
-	ds := []SymbolData{{Symbol: "A", Candles: cs, Funding: []data.Funding{{CalcTime: cs[1].Time, Rate: 0.001}}}}
+	ds := []SymbolData{{Symbol: "A", Candles: cs, Funding: []market.Funding{{CalcTime: cs[1].Time, Rate: 0.001}}}}
 	mk := func(string) Strategy {
 		return &scriptedStrategy{signals: []testSignal{{1, 90, 0}, {1, 0, 0}, {1, 0, 0}}}
 	}
@@ -116,7 +116,7 @@ func TestPortfolioFinalFundingWithoutCandle(t *testing.T) {
 	cfg.UseFunding = true
 	cs := bars(100)
 	at := cs[0].Time.Add(time.Hour)
-	ds := []SymbolData{{Symbol: "A", Candles: cs, Funding: []data.Funding{{CalcTime: at, Rate: 0.001}}}}
+	ds := []SymbolData{{Symbol: "A", Candles: cs, Funding: []market.Funding{{CalcTime: at, Rate: 0.001}}}}
 	mk := func(string) Strategy { return &scriptedStrategy{signals: []testSignal{{1, 90, 0}}} }
 	r := RunPortfolio(PortfolioConfig{Config: cfg}, mk, ds)
 	near(t, r.FinalEquity, 999.9)

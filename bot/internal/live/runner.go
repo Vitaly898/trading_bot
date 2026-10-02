@@ -7,8 +7,9 @@ import (
 	"sort"
 	"time"
 
-	"bot/internal/backtest"
+	"bot/internal/accounting"
 	"bot/internal/candle"
+	"bot/internal/trading"
 )
 
 type RunnerConfig struct {
@@ -26,31 +27,31 @@ type Runner struct {
 	log                *slog.Logger
 	cfg                RunnerConfig
 	exec               Executor
-	strategies         map[string]backtest.Strategy
+	strategies         map[string]trading.Strategy
 	lastClose          map[string]float64
 	lastClosed         map[string]time.Time
 	entryBars          map[string]time.Time
-	positionStates     map[string]backtest.PositionState
+	positionStates     map[string]trading.PositionState
 	knownDirections    map[string]int
 	syncBlocked        bool
 	persistenceBlocked bool
 }
 
 func NewRunner(log *slog.Logger, cfg RunnerConfig, exec Executor) *Runner {
-	r := &Runner{log: log, cfg: cfg, exec: exec, strategies: map[string]backtest.Strategy{}, lastClose: map[string]float64{}, lastClosed: map[string]time.Time{}, entryBars: map[string]time.Time{}, positionStates: map[string]backtest.PositionState{}, knownDirections: map[string]int{}}
+	r := &Runner{log: log, cfg: cfg, exec: exec, strategies: map[string]trading.Strategy{}, lastClose: map[string]float64{}, lastClosed: map[string]time.Time{}, entryBars: map[string]time.Time{}, positionStates: map[string]trading.PositionState{}, knownDirections: map[string]int{}}
 	if e, ok := exec.(*TestnetExecutor); ok {
 		e.beforeSubmit = r.saveState
 	}
 	return r
 }
-func (r *Runner) RegisterStrategy(sym string, s backtest.Strategy) error {
+func (r *Runner) RegisterStrategy(sym string, s trading.Strategy) error {
 	r.strategies[sym] = s
 	return r.syncPosition(sym, "restore")
 }
 
 // WarmupStrategy rebuilds indicators and restores trading state afterwards.
 // Downtime bars count towards time stops; no historical market orders are sent.
-func (r *Runner) WarmupStrategy(sym string, s backtest.Strategy, cs []candle.Candle) error {
+func (r *Runner) WarmupStrategy(sym string, s trading.Strategy, cs []candle.Candle) error {
 	if len(cs) == 0 {
 		return fmt.Errorf("%s: no closed warmup candles", sym)
 	}
@@ -109,12 +110,12 @@ func (r *Runner) syncPosition(sym, reason string) error {
 		return nil
 	}
 	if dir == 0 {
-		if pa, ok := s.(backtest.PositionAware); ok {
+		if pa, ok := s.(trading.PositionAware); ok {
 			pa.OnPositionChange(0, reason)
 		}
 		delete(r.positionStates, sym)
 		delete(r.entryBars, sym)
-	} else if restorer, ok := s.(backtest.PositionRestorer); ok {
+	} else if restorer, ok := s.(trading.PositionRestorer); ok {
 		state, exists := r.positionStates[sym]
 		if !exists || state.Dir != dir {
 			return fmt.Errorf("%s: position has no matching saved strategy state", sym)
@@ -123,10 +124,10 @@ func (r *Runner) syncPosition(sym, reason string) error {
 			return fmt.Errorf("restore %s: %w", sym, err)
 		}
 	} else {
-		if pa, ok := s.(backtest.PositionAware); ok {
+		if pa, ok := s.(trading.PositionAware); ok {
 			pa.OnPositionChange(dir, reason)
 		}
-		r.positionStates[sym] = backtest.PositionState{Dir: dir}
+		r.positionStates[sym] = trading.PositionState{Dir: dir}
 	}
 	r.knownDirections[sym] = dir
 	return nil
@@ -200,7 +201,7 @@ func (r *Runner) Handle(ctx context.Context, ev KlineEvent) {
 	r.MarkClosed(sym, ev.Candle.Time)
 	defer r.checkpoint()
 	dir, stop, take := s.OnCandle(ev.Candle)
-	if restorer, ok := s.(backtest.PositionRestorer); ok && r.knownDirections[sym] != 0 {
+	if restorer, ok := s.(trading.PositionRestorer); ok && r.knownDirections[sym] != 0 {
 		r.positionStates[sym] = restorer.PositionState()
 	}
 	r.log.Info("свеча закрыта", "sym", sym, "close", ev.Candle.C, "signal", dir, "stop", stop, "take", take)
@@ -240,11 +241,8 @@ func (r *Runner) Handle(ctx context.Context, ev KlineEvent) {
 		r.log.Error("equity", "err", err)
 		return
 	}
-	dist := ev.Candle.C * 0.02
-	if stop > 0 && absf(ev.Candle.C-stop) > 0 {
-		dist = absf(ev.Candle.C - stop)
-	}
-	qty := equity * r.cfg.RiskPct / dist
+	dist := accounting.StopDistance(ev.Candle.C, stop)
+	qty := accounting.Quantity(equity, r.cfg.RiskPct, dist)
 	if err := validateEntry(dir, qty, ev.Candle.C); err != nil {
 		r.log.Error("sizing", "err", err)
 		return
@@ -252,10 +250,7 @@ func (r *Runner) Handle(ctx context.Context, ev KlineEvent) {
 	if r.cfg.MaxTotalRisk > 0 {
 		openRisk := 0.0
 		for _, p := range positions {
-			d := p.EntryPrice * 0.02
-			if p.Stop > 0 {
-				d = absf(p.EntryPrice - p.Stop)
-			}
+			d := accounting.StopDistance(p.EntryPrice, p.Stop)
 			openRisk += p.Qty * d
 		}
 		if openRisk+qty*dist > r.cfg.MaxTotalRisk*equity {
@@ -263,8 +258,8 @@ func (r *Runner) Handle(ctx context.Context, ev KlineEvent) {
 			return
 		}
 	}
-	state := backtest.PositionState{Dir: dir}
-	if restorer, ok := s.(backtest.PositionRestorer); ok {
+	state := trading.PositionState{Dir: dir}
+	if restorer, ok := s.(trading.PositionRestorer); ok {
 		state = restorer.EntryState(dir)
 	}
 	r.positionStates[sym] = state
@@ -277,14 +272,14 @@ func (r *Runner) Handle(ctx context.Context, ev KlineEvent) {
 		}
 		return
 	}
-	if pa, ok := s.(backtest.PositionAware); ok {
+	if pa, ok := s.(trading.PositionAware); ok {
 		pa.OnPositionChange(dir, "")
 	}
 	r.knownDirections[sym] = dir
-	if restorer, ok := s.(backtest.PositionRestorer); ok {
+	if restorer, ok := s.(trading.PositionRestorer); ok {
 		r.positionStates[sym] = restorer.PositionState()
 	}
-	if dp, ok := s.(backtest.DiagnosticsProvider); ok {
+	if dp, ok := s.(trading.DiagnosticsProvider); ok {
 		d := dp.Diagnostics()
 		keys := make([]string, 0, len(d))
 		for k := range d {

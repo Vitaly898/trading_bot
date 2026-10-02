@@ -9,22 +9,24 @@ import (
 // VWAPRevert — mean-reversion к VWAP (Рецепт 2, «сделка на стороне ММ»).
 //
 // Вход long:  close отклонился ниже VWAP больше чем на dev_mult×ATR
-//             + RSI развернулся вверх из зоны перепроданности + ADX < adx_max (флэт).
+//   - RSI развернулся вверх из зоны перепроданности + ADX < adx_max (флэт).
+//
 // Вход short: симметрично.
 // Выход:      достижение VWAP / временной стоп (time_stop свечей) / RSI в противоположной зоне.
 // Стоп:       atr_mult × ATR от закрытия сигнальной свечи.
 //
 // Параметры (yaml):
-//   rsi_period: int                            (def 14)
-//   oversold, overbought: float                (def 30 / 70)
-//   dev_mult: float                            (def 1.5)
-//   adx_period: int, adx_max: float            (def 14 / 0=выкл)
-//   atr_period, atr_mult: стоп                 (def 14 / 1.0)
-//   time_stop: int (свечей, 0=выкл)            (def 12)
-//   tp_r: float                                (def 0=биржевого тейка нет; при >0
-//     жёсткий тейк = tp_r × stopDist, вдобавок к выходу у VWAP)
-//   stop_pct, take_pct: float                  (def 0=выкл; фикс. уровни от цены)
-//   long_short: bool                           (def true)
+//
+//	rsi_period: int                            (def 14)
+//	oversold, overbought: float                (def 30 / 70)
+//	dev_mult: float                            (def 1.5)
+//	adx_period: int, adx_max: float            (def 14 / 0=выкл)
+//	atr_period, atr_mult: стоп                 (def 14 / 1.0)
+//	time_stop: int (свечей, 0=выкл)            (def 12)
+//	tp_r: float                                (def 0=биржевого тейка нет; при >0
+//	  жёсткий тейк = tp_r × stopDist, вдобавок к выходу у VWAP)
+//	stop_pct, take_pct: float                  (def 0=выкл; фикс. уровни от цены)
+//	long_short: bool                           (def true)
 type VWAPRevert struct {
 	vwap talive.Indicator
 	rsi  talive.Indicator
@@ -42,10 +44,10 @@ type VWAPRevert struct {
 	timeStop   int
 	longOnly   bool
 
-	prevRSI float64
-	hasPrev bool
-	posDir  int
-	barsIn  int
+	prevRSI    float64
+	hasPrev    bool
+	posDir     int
+	barsIn     int
 	lastCandle candle.Candle
 }
 
