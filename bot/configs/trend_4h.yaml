@@ -1,0 +1,26 @@
+# Рецепт 1: тренд-фолловинг 4h, long+short.
+# База: EMA20/50 + ADX-фильтр + EMA200-фильтр, выход по Supertrend, стоп 2×ATR.
+symbol: BTCUSDT
+tf: 4h
+db: history.db
+equity: 10000
+risk: 0.01
+fee: 0.0005
+slip: 0.0002
+funding: true
+
+strategy:
+  name: trend
+  params:
+    ma_type: ema        # ema|sma|smma|wma|hma|vwma|kama
+    fast: 20
+    slow: 50
+    adx_min: 25         # 0 = выключить фильтр
+    adx_period: 14
+    ema_filter: 200     # 0 = выключить; long только выше EMA200
+    exit: supertrend    # signal|supertrend
+    st_period: 10
+    st_mult: 3.0
+    atr_period: 14
+    atr_mult: 2.0
+    long_short: true

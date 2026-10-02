@@ -1,0 +1,8 @@
+# Подбор размеров стопа и тейка: atr_mult × tp_r.
+# Фиксировано: adx_min=20 (плато), exit=signal, без ema_filter/funding-вето.
+# 4×4 = 16 прогонов. Ищем плато, а не пик.
+base: configs/sweeps/base_tpsl.yaml
+top: 0
+grid:
+  atr_mult: [1.5, 2.0, 2.5, 3.0]
+  tp_r: [0, 1.5, 2.0, 3.0]

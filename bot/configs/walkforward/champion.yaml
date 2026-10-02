@@ -1,0 +1,23 @@
+# Замороженный чемпион (центр плато из TP/SL-сетки).
+symbol: BTCUSDT
+tf: 4h
+db: history.db
+equity: 10000
+risk: 0.01
+fee: 0.0005
+slip: 0.0002
+funding: true
+
+strategy:
+  name: trend
+  params:
+    ma_type: ema
+    fast: 20
+    slow: 50
+    adx_min: 20
+    ema_filter: 0
+    exit: signal
+    atr_period: 14
+    atr_mult: 2.5
+    tp_r: 3.0
+    long_short: true

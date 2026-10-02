@@ -1,0 +1,59 @@
+# Топ-30 портфель: чемпион-стратегия на 32 символах (топ по капитализации,
+# доступные на Binance USDT-M; HYPE/PUMP исключены по решению — мало истории).
+symbols:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - XRPUSDT
+  - BNBUSDT
+  - DOGEUSDT
+  - ADAUSDT
+  - TRXUSDT
+  - AVAXUSDT
+  - LINKUSDT
+  - XLMUSDT
+  - HBARUSDT
+  - LTCUSDT
+  - BCHUSDT
+  - DOTUSDT
+  - UNIUSDT
+  - NEARUSDT
+  - AAVEUSDT
+  - ATOMUSDT
+  - FILUSDT
+  - APTUSDT
+  - ARBUSDT
+  - OPUSDT
+  - INJUSDT
+  - SUIUSDT
+  - SEIUSDT
+  - TAOUSDT
+  - RENDERUSDT
+  - FETUSDT
+  - WIFUSDT
+  - 1000PEPEUSDT
+  - 1000SHIBUSDT
+tf: 4h
+db: history.db
+equity: 10000
+risk: 0.04
+fee: 0.0005
+slip: 0.0002
+funding: true
+max_positions: 4
+max_total_risk: 0.02
+mode: split
+
+strategy:
+  name: trend
+  params:
+    ma_type: ema
+    fast: 20
+    slow: 50
+    adx_min: 30
+    ema_filter: 0
+    exit: signal
+    atr_period: 14
+    atr_mult: 2.5
+    tp_r: 3.0
+    long_short: false

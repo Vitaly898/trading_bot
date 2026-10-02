@@ -1,0 +1,7 @@
+# Сетка MR-модуля (флэт-машина) на портфеле ETH+SOL.
+# dev_mult × oversold: 3×3 = 9 прогонов.
+base: configs/eth_sol_regime.yaml
+top: 0
+grid:
+  mr_dev_mult: [0.5, 1.0, 1.5]
+  mr_oversold: [30, 35, 40]

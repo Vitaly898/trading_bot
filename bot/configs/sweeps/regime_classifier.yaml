@@ -1,0 +1,7 @@
+# Сетка классификатора режима на портфеле ETH+SOL.
+# adx_enter × er_enter (пороги выхода фиксированы): 3×3 = 9 прогонов.
+base: configs/eth_sol_regime.yaml
+top: 0
+grid:
+  adx_enter: [22, 25, 28]
+  er_enter: [0.20, 0.25, 0.30]

@@ -1,0 +1,64 @@
+# Топ-20, 4h — чемпионские параметры RegimeSwitch (как валидированы walk-forward).
+symbols:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - XRPUSDT
+  - BNBUSDT
+  - DOGEUSDT
+  - ADAUSDT
+  - TRXUSDT
+  - AVAXUSDT
+  - LINKUSDT
+  - XLMUSDT
+  - HBARUSDT
+  - LTCUSDT
+  - BCHUSDT
+  - DOTUSDT
+  - UNIUSDT
+  - NEARUSDT
+  - AAVEUSDT
+  - ATOMUSDT
+  - 1000PEPEUSDT
+tf: 4h
+db: history.db
+equity: 10000
+risk: 0.01
+fee: 0.0005
+slip: 0.0002
+funding: true
+max_positions: 2
+max_total_risk: 0.02
+mode: shared
+leverage: 10
+
+strategy:
+  name: regime_switch
+  params:
+    # классификатор (чемпион)
+    adx_period: 14
+    er_period: 20
+    adx_enter: 28
+    adx_exit: 20
+    er_enter: 0.25
+    er_exit: 0.18
+    min_bars: 3
+    # тренд-модуль (чемпион: KAMA + ADX30, SL 2.5×ATR, TP 3R)
+    trend_ma_type: kama
+    trend_fast: 12
+    trend_slow: 50
+    trend_adx_min: 30
+    trend_exit: signal
+    trend_atr_period: 14
+    trend_atr_mult: 2.5
+    trend_tp_r: 3.0
+    trend_long_short: false
+    # флэт-модуль (чемпион)
+    mr_rsi_period: 14
+    mr_oversold: 35
+    mr_overbought: 65
+    mr_dev_mult: 2.0
+    mr_atr_period: 14
+    mr_atr_mult: 1.0
+    mr_time_stop: 12
+    mr_long_short: true

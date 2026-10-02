@@ -1,0 +1,8 @@
+# Сетка для walk-forward optimize: вокруг плато (стоп 2–3 ATR, тейк 0–3R, ADX 17–20).
+# 3×3×2 = 18 комбинаций на фолд.
+base: configs/walkforward/champion.yaml
+top: 0
+grid:
+  atr_mult: [2.0, 2.5, 3.0]
+  tp_r: [0, 2.0, 3.0]
+  adx_min: [17, 20]

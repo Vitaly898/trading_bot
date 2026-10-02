@@ -1,0 +1,6 @@
+# Walk-forward портфеля-чемпиона (замороженные параметры).
+mode: fixed
+base: configs/portfolio_4h.yaml
+train_months: 12
+test_months: 3
+step_months: 3

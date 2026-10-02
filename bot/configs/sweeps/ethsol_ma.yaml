@@ -1,0 +1,8 @@
+# Комбо-сетка: тип MA × пары fast/slow. 4×4 = 16 прогонов на символ.
+# Фиксировано: adx_min=30, atr 2.5, tp 3R, long-only (это уже валидировано).
+base: configs/sweeps/base_eth.yaml
+top: 0
+grid:
+  ma_type: [ema, hma, kama, vwma]
+  fast: [10, 12, 20]
+  slow: [30, 50, 100]  # все комбо fast<slow

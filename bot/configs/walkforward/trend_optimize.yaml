@@ -1,0 +1,8 @@
+# Walk-forward с переоптимизацией: сетка подбирается на train, лучшее на test.
+mode: optimize
+base: configs/walkforward/champion.yaml
+grid: configs/sweeps/wf_grid.yaml
+train_months: 12
+test_months: 3
+step_months: 3
+metric: sharpe

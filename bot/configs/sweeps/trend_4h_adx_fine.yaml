@@ -1,0 +1,8 @@
+# Проверка плато: ADX-фильтр вокруг найденного пика (20), без EMA200, exit=signal.
+# Ищем ПЛАТО (соседние значения тоже прибыльны), а не иглу.
+base: configs/trend_4h_baseline.yaml
+top: 0
+grid:
+  exit: [signal]
+  adx_min: [10, 15, 17, 20, 22, 25]
+  funding_long_max: [0, 0.0003]

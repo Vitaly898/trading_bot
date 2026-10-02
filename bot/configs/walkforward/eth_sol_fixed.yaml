@@ -1,0 +1,6 @@
+# Walk-forward пары ETH+SOL: KAMA(12/50), замороженные параметры.
+mode: fixed
+base: configs/eth_sol.yaml
+train_months: 12
+test_months: 3
+step_months: 3

@@ -1,0 +1,7 @@
+# Сетка для портфельного walk-forward optimize: фильтр тренда × направление.
+# 3×2 = 6 комбинаций на фолд (портфельные прогоны дорогие, сетка компактная).
+base: configs/portfolio_4h.yaml
+top: 0
+grid:
+  adx_min: [25, 28, 30]
+  long_short: [true, false]

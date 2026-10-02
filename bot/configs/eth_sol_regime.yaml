@@ -1,0 +1,45 @@
+# RegimeSwitch на ETH+SOL: тренд-модуль (KAMA) + флэт-модуль (VWAP mean-reversion).
+symbols: [ETHUSDT, SOLUSDT]
+tf: 4h
+db: history.db
+equity: 10000
+risk: 0.01
+fee: 0.0005
+slip: 0.0002
+funding: true
+max_positions: 2
+max_total_risk: 0.02
+mode: shared
+leverage: 10          # плечо 10x (по решению пользователя). NB: сайзинг от риска не меняется,
+                      # плечо влияет на маржу и цену ликвидации, не на PnL
+
+strategy:
+  name: regime_switch
+  params:
+    # --- классификатор режима (ADX + ER + гистерезис) ---
+    adx_period: 14
+    er_period: 20
+    adx_enter: 28     # флэт→тренд: ADX>=25 и ER>=0.25
+    adx_exit: 20      # тренд→флэт: ADX<20 или ER<0.18
+    er_enter: 0.25
+    er_exit: 0.18
+    min_bars: 3
+    # --- тренд-модуль (чемпион) ---
+    trend_ma_type: kama
+    trend_fast: 12
+    trend_slow: 50
+    trend_adx_min: 30
+    trend_exit: signal
+    trend_atr_period: 14
+    trend_atr_mult: 2.5
+    trend_tp_r: 3.0
+    trend_long_short: false
+    # --- флэт-модуль (mean-reversion к VWAP) ---
+    mr_rsi_period: 14
+    mr_oversold: 35       # во флэте мягче, чем 30
+    mr_overbought: 65
+    mr_dev_mult: 2.0      # отклонение от VWAP в ATR
+    mr_atr_period: 14
+    mr_atr_mult: 1.0      # короткий стоп
+    mr_time_stop: 12
+    mr_long_short: true   # во флэте играем в обе стороны

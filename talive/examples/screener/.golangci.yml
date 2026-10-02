@@ -1,0 +1,48 @@
+version: "2"
+
+formatters:
+  enable:
+    - goimports
+    - gofmt
+
+linters:
+  enable:
+    - errcheck      # unchecked errors
+    - errorlint     # proper error wrapping (Go 1.13+)
+    - gocritic      # bugs, performance, and style
+    - gosec         # security problems
+    - govet         # suspicious constructs
+    - ineffassign   # unused assignments
+    - nilerr        # returning nil instead of error
+    - staticcheck   # advanced static analysis
+    - unconvert     # unnecessary type conversions
+    - unused        # unused code
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+
+    gosec:
+      excludes:
+        - G404 # weak random is fine for non-security use
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1016
+
+  exclusions:
+    presets:
+      - std-error-handling
+      - common-false-positives
+    rules:
+      - path: '_test\.go'
+        linters:
+          - errcheck
+          - gosec

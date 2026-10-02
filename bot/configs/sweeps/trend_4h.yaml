@@ -1,0 +1,9 @@
+# Тюнинг-сессия: стратегия trend на 4h.
+# Сетка: выход × ADX-фильтр × EMA200-фильтр × funding-вето = 2×3×2×2 = 24 прогона.
+base: configs/trend_4h_baseline.yaml
+top: 24
+grid:
+  exit: [signal, supertrend]
+  adx_min: [0, 20, 25]
+  ema_filter: [0, 200]
+  funding_long_max: [0, 0.0003]   # 0 = вето выкл; 0.0003 = 0.03% за 8ч

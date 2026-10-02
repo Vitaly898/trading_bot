@@ -1,0 +1,6 @@
+# Walk-forward RegimeSwitch на ETH+SOL (замороженный v0).
+mode: fixed
+base: configs/eth_sol_regime.yaml
+train_months: 12
+test_months: 3
+step_months: 3

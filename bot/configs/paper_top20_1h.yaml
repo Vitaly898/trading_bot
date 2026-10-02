@@ -1,0 +1,69 @@
+# ТЕСТ ИСПОЛНЕНИЯ: топ-20 пар, 1h, смягчённые параметры — цель: увидеть сделки
+# и проверить ордер-флоу на testnet. НЕ боевой конфиг — после теста вернуться на 4h чемпиона.
+symbols:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - XRPUSDT
+  - BNBUSDT
+  - DOGEUSDT
+  - ADAUSDT
+  - TRXUSDT
+  - AVAXUSDT
+  - LINKUSDT
+  - XLMUSDT
+  - HBARUSDT
+  - LTCUSDT
+  - BCHUSDT
+  - DOTUSDT
+  - UNIUSDT
+  - NEARUSDT
+  - AAVEUSDT
+  - ATOMUSDT
+  - 1000PEPEUSDT
+tf: 1h
+db: history.db
+equity: 5000          # тестнет-депозит
+risk: 0.005           # 0.5% на сделку (тест)
+fee: 0.0005
+slip: 0.0002
+funding: true
+max_positions: 2
+max_total_risk: 0.02
+mode: shared
+leverage: 1           # тест исполнения — без плеча
+
+strategy:
+  name: regime_switch
+  params:
+    # классификатор — мягче, чтобы чаще переключался
+    adx_period: 14
+    er_period: 20
+    adx_enter: 20
+    adx_exit: 17
+    er_enter: 0.20
+    er_exit: 0.15
+    min_bars: 3
+    # тренд-модуль — мягче для теста
+    trend_ma_type: kama
+    trend_fast: 12
+    trend_slow: 50
+    trend_adx_min: 20
+    trend_exit: signal
+    trend_atr_period: 14
+    trend_atr_mult: 2.5
+    trend_tp_r: 0
+    trend_stop_pct: 0.03   # SL -3% (фикс)
+    trend_take_pct: 0.09   # TP +9% (фикс) — 1:3 в пользу ТП, по предложению пользователя
+    trend_long_short: false
+    # флэт-модуль — мягче для теста
+    mr_rsi_period: 14
+    mr_oversold: 40
+    mr_overbought: 60
+    mr_dev_mult: 1.0
+    mr_atr_period: 14
+    mr_atr_mult: 1.0
+    mr_stop_pct: 0.03
+    mr_take_pct: 0.09
+    mr_time_stop: 12
+    mr_long_short: true

@@ -1,0 +1,28 @@
+.DS_Store
+.idea/
+.vscode/
+
+# Credentials and local configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Runtime data and generated output
+*.db
+*.db-shm
+*.db-wal
+*.log
+nohup.out
+bot/paper_state.json
+bot/paper_exchange_info.json
+bot/charts/
+
+# Build and test output
+bin/
+coverage.*
+*.test
+.gocache/
+trading-bot-initial.zip
+trading-bot-initial.bundle

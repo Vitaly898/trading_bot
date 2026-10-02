@@ -1,0 +1,24 @@
+# Рецепт 2: mean-reversion к VWAP, 15m.
+# Вход против отклонения от VWAP (дневной якорь) с RSI-разворотом, выход к VWAP.
+symbol: BTCUSDT
+tf: 15m
+db: history.db
+equity: 10000
+risk: 0.01
+fee: 0.0005
+slip: 0.0002
+funding: true
+
+strategy:
+  name: vwap_revert
+  params:
+    rsi_period: 14
+    oversold: 30
+    overbought: 70
+    dev_mult: 1.5       # отклонение от VWAP в ATR для входа
+    adx_max: 20         # 0 = выключить фильтр; торгуем только во флэте
+    adx_period: 14
+    atr_period: 14
+    atr_mult: 1.0       # стоп = 1×ATR
+    time_stop: 12       # свечей максимум в позиции (0 = выкл)
+    long_short: true
