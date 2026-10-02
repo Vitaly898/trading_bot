@@ -1,6 +1,7 @@
 package backtest
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -41,7 +42,7 @@ type event struct {
 // На каждый символ — свой инстанс стратегии (stateful!). Сайзинг от текущей
 // портфельной equity. Лимит позиций: лишние входы пропускаются.
 func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds []SymbolData) *Report {
-	rep := &Report{Config: cfg.Config}
+	rep := &Report{Config: cfg.Config, FinalEquity: cfg.StartEquity}
 
 	// общий таймлайн: funding-события и свечи
 	var events []event
@@ -64,7 +65,7 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 		if !events[i].t.Equal(events[j].t) {
 			return events[i].t.Before(events[j].t)
 		}
-		return events[i].fund != nil // funding раньше свечи при равном времени
+		return events[i].fund != nil && events[j].fund == nil // funding раньше свечи при равном времени
 	})
 	if len(events) == 0 {
 		return rep
@@ -87,8 +88,6 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 		}
 		return sum
 	}
-	peak := equity
-	maxDD := 0.0
 	timeInMarket := 0
 	activeBars := 0
 
@@ -106,7 +105,7 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 		equity += pnl
 		rep.Trades = append(rep.Trades, Trade{
 			Symbol: sym,
-			Dir: pos.dir, EntryTime: pos.entryTime, ExitTime: t,
+			Dir:    pos.dir, EntryTime: pos.entryTime, ExitTime: t,
 			EntryPrice: pos.entryPrice, ExitPrice: fill, Qty: pos.qty,
 			PnL: pnl, Fees: pos.fees, Funding: pos.funding, ExitReason: reason,
 		})
@@ -121,7 +120,7 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 	equityCurve := []float64{}
 	var curveTimes []time.Time
 
-	for _, ev := range events {
+	for i, ev := range events {
 		// funding-событие
 		if ev.fund != nil {
 			if fa, ok := strategies[ev.sym].(FundingAware); ok {
@@ -202,12 +201,12 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 			}
 		}
 
-		// mark-to-market (раз на timestamp, только активный период)
-		if active(c.Time) && (len(curveTimes) == 0 || !curveTimes[len(curveTimes)-1].Equal(c.Time)) {
+		// Mark after all candles at this timestamp have updated prices and positions.
+		if active(c.Time) && (i+1 == len(events) || !events[i+1].t.Equal(c.Time)) {
 			mark := equity
 			for s, pp := range positions {
 				if px := lastClose[s]; px > 0 {
-					mark += float64(pp.dir) * (px - pp.entryPrice) * pp.qty
+					mark += pp.markPnL(px)
 				}
 			}
 			equityCurve = append(equityCurve, mark)
@@ -216,12 +215,6 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 				timeInMarket++
 			}
 			activeBars++
-			if mark > peak {
-				peak = mark
-			}
-			if dd := (peak - mark) / peak; dd > maxDD {
-				maxDD = dd
-			}
 		}
 	}
 
@@ -231,9 +224,17 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 		closePos(sym, lastClose[sym], lastT, "end")
 	}
 
+	if len(equityCurve) > 0 {
+		if curveTimes[len(curveTimes)-1].Equal(lastT) {
+			equityCurve[len(equityCurve)-1] = equity
+		} else {
+			equityCurve = append(equityCurve, equity)
+			curveTimes = append(curveTimes, lastT)
+		}
+	}
 	rep.FinalEquity = equity
 	rep.TotalReturn = equity/cfg.StartEquity - 1
-	rep.MaxDrawdown = maxDD
+	rep.MaxDrawdown = maxDrawdown(cfg.StartEquity, equityCurve)
 	if activeBars > 0 {
 		rep.ExposurePct = 100 * float64(timeInMarket) / float64(activeBars)
 	}
@@ -266,7 +267,7 @@ func sharpeFromReturns(rets []float64, times []time.Time) float64 {
 	for _, r := range rets {
 		sq += (r - mean) * (r - mean)
 	}
-	std := sqrt(sq / float64(len(rets)-1))
+	std := math.Sqrt(sq / float64(len(rets)-1))
 	if std == 0 {
 		return 0
 	}
@@ -275,18 +276,7 @@ func sharpeFromReturns(rets []float64, times []time.Time) float64 {
 		return 0
 	}
 	perYear := float64(len(times)) / (span / (24 * 365))
-	return mean / std * sqrt(perYear)
-}
-
-func sqrt(x float64) float64 {
-	if x <= 0 {
-		return 0
-	}
-	z := x
-	for i := 0; i < 50; i++ {
-		z -= (z*z - x) / (2 * z)
-	}
-	return z
+	return mean / std * math.Sqrt(perYear)
 }
 
 // RunSplit — режим «раздельных суб-портфелей»: капитал делится поровну между
@@ -294,7 +284,7 @@ func sqrt(x float64) float64 {
 // Нет конкуренции за слоты — сильный тренд в одном символе никогда не
 // блокируется пилой в другом. Портфельная equity = сумма суб-портфелей.
 func RunSplit(cfg Config, mkStrategy func(sym string) Strategy, ds []SymbolData) *Report {
-	rep := &Report{Config: cfg}
+	rep := &Report{Config: cfg, FinalEquity: cfg.StartEquity}
 	if len(ds) == 0 {
 		return rep
 	}
@@ -308,6 +298,7 @@ func RunSplit(cfg Config, mkStrategy func(sym string) Strategy, ds []SymbolData)
 
 	for _, d := range ds {
 		if len(d.Candles) == 0 {
+			curves[d.Symbol] = curve{}
 			continue
 		}
 		sub := cfg
@@ -343,8 +334,6 @@ func RunSplit(cfg Config, mkStrategy func(sym string) Strategy, ds []SymbolData)
 	equity := make([]float64, 0, len(times))
 	idx := map[string]int{}
 	last := map[string]float64{}
-	peak := 0.0
-	maxDD := 0.0
 	for _, t := range times {
 		sum := 0.0
 		for sym, c := range curves {
@@ -359,19 +348,13 @@ func RunSplit(cfg Config, mkStrategy func(sym string) Strategy, ds []SymbolData)
 			}
 		}
 		equity = append(equity, sum)
-		if sum > peak {
-			peak = sum
-		}
-		if dd := (peak - sum) / peak; dd > maxDD {
-			maxDD = dd
-		}
 	}
 
 	rep.Equity = equity
 	rep.EquityTimes = times
 	rep.FinalEquity = equity[len(equity)-1]
 	rep.TotalReturn = rep.FinalEquity/cfg.StartEquity - 1
-	rep.MaxDrawdown = maxDD
+	rep.MaxDrawdown = maxDrawdown(cfg.StartEquity, equity)
 	calcTradeStats(rep)
 	rep.Sharpe = sharpeFromReturns(returns(equity), times)
 	return rep

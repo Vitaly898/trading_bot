@@ -72,3 +72,19 @@ func calcSharpe(equity []float64, candles []candle.Candle) float64 {
 	perYear := float64(len(candles)) / (span / (24 * 365))
 	return mean / std * math.Sqrt(perYear)
 }
+
+// maxDrawdown starts at the initial capital, so first-bar costs count too.
+func maxDrawdown(startEquity float64, equity []float64) float64 {
+	peak, maxDD := startEquity, 0.0
+	for _, mark := range equity {
+		if mark > peak {
+			peak = mark
+		}
+		if peak > 0 {
+			if dd := (peak - mark) / peak; dd > maxDD {
+				maxDD = dd
+			}
+		}
+	}
+	return maxDD
+}

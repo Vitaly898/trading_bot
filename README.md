@@ -24,7 +24,9 @@ cd ../talive
 go test ./...
 ```
 
-The application currently has no automated tests; the indicator library has tests.
+The application includes regression tests for backtest accounting, portfolio equity,
+and the Efficiency Ratio indicator. The indicator library also has tests.
+Run `go test -race ./...` from `bot/` to include the race detector.
 
 ## Historical data and experiments
 
