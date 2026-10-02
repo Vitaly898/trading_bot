@@ -1,6 +1,7 @@
 package live
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -16,18 +17,25 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Position — открытая позиция (единый вид для local и testnet).
 type Position struct {
-	Symbol     string    `json:"symbol"`
-	Dir        int       `json:"dir"` // +1 long, -1 short
-	Qty        float64   `json:"qty"`
-	EntryPrice float64   `json:"entry_price"`
-	Stop       float64   `json:"stop"`
-	Take       float64   `json:"take"`
-	EntryTime  time.Time `json:"entry_time"`
+	Symbol        string    `json:"symbol"`
+	Dir           int       `json:"dir"` // +1 long, -1 short
+	Qty           float64   `json:"qty"`
+	EntryPrice    float64   `json:"entry_price"`
+	Stop          float64   `json:"stop"`
+	Take          float64   `json:"take"`
+	EntryTime     time.Time `json:"entry_time"`
+	EntryOrderID  int64     `json:"entry_order_id,omitempty"`
+	ClientOrderID string    `json:"client_order_id,omitempty"`
+	PendingClose  string    `json:"pending_close,omitempty"`
+	StopOrderID   int64     `json:"stop_order_id,omitempty"`
+	TakeOrderID   int64     `json:"take_order_id,omitempty"`
+	Unconfirmed   bool      `json:"unconfirmed,omitempty"`
 }
 
 // Executor — исполнение ордеров.
@@ -47,10 +55,11 @@ type Executor interface {
 // ---------- Local: виртуальное исполнение по реальным ценам ----------
 
 type LocalExecutor struct {
-	log     *slog.Logger
-	equity  float64
-	feePct  float64
-	slipPct float64
+	mu        sync.RWMutex
+	log       *slog.Logger
+	equity    float64
+	feePct    float64
+	slipPct   float64
 	positions map[string]*Position
 }
 
@@ -63,11 +72,27 @@ func NewLocalExecutor(log *slog.Logger, startEquity, feePct, slipPct float64) *L
 
 func (e *LocalExecutor) Name() string { return "local" }
 
-func (e *LocalExecutor) Equity(context.Context) (float64, error) { return e.equity, nil }
+func (e *LocalExecutor) Equity(context.Context) (float64, error) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.equity, nil
+}
 
-func (e *LocalExecutor) Positions() map[string]*Position { return e.positions }
+func (e *LocalExecutor) Positions() map[string]*Position {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return copyPositions(e.positions)
+}
 
 func (e *LocalExecutor) Open(_ context.Context, sym string, dir int, qty, stop, take, refPrice float64) (float64, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.positions[sym] != nil {
+		return 0, fmt.Errorf("position already exists: %s", sym)
+	}
+	if err := validateEntry(dir, qty, refPrice); err != nil {
+		return 0, err
+	}
 	fill := refPrice * (1 + float64(dir)*e.slipPct)
 	fee := fill * qty * e.feePct
 	e.equity -= fee
@@ -81,6 +106,8 @@ func (e *LocalExecutor) Open(_ context.Context, sym string, dir int, qty, stop, 
 }
 
 func (e *LocalExecutor) Close(_ context.Context, sym string, refPrice float64) (float64, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	pos := e.positions[sym]
 	if pos == nil {
 		return 0, fmt.Errorf("нет позиции %s", sym)
@@ -97,10 +124,13 @@ func (e *LocalExecutor) Close(_ context.Context, sym string, refPrice float64) (
 
 // CloseAt — закрытие по конкретной цене (стоп/тейк в local-режиме).
 func (e *LocalExecutor) CloseAt(sym string, price float64, reason string) (float64, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	pos := e.positions[sym]
 	if pos == nil {
 		return 0, fmt.Errorf("нет позиции %s", sym)
 	}
+	price *= 1 - float64(pos.Dir)*e.slipPct
 	fee := price * pos.Qty * e.feePct
 	pnl := float64(pos.Dir)*(price-pos.EntryPrice)*pos.Qty - fee
 	e.equity += pnl
@@ -115,17 +145,23 @@ func (e *LocalExecutor) CloseAt(sym string, price float64, reason string) (float
 const testnetURL = "https://testnet.binancefuture.com"
 
 type TestnetExecutor struct {
-	log       *slog.Logger
-	apiKey    string
-	apiSecret string
-	positions map[string]*Position
-	steps     map[string]float64 // symbol → stepSize
-	ticks     map[string]float64 // symbol → tickSize
+	beforeSubmit func(map[string]*Position) error
+	mu           sync.RWMutex
+	client       *http.Client
+	baseURL      string
+	pollInterval time.Duration
+	log          *slog.Logger
+	apiKey       string
+	apiSecret    string
+	positions    map[string]*Position
+	steps        map[string]float64 // symbol → stepSize
+	ticks        map[string]float64 // symbol → tickSize
 }
 
 func NewTestnetExecutor(log *slog.Logger, apiKey, apiSecret string) *TestnetExecutor {
 	return &TestnetExecutor{
 		log: log, apiKey: apiKey, apiSecret: apiSecret,
+		client: httpClient, baseURL: testnetURL, pollInterval: 400 * time.Millisecond,
 		positions: map[string]*Position{},
 		steps:     map[string]float64{}, ticks: map[string]float64{},
 	}
@@ -133,7 +169,11 @@ func NewTestnetExecutor(log *slog.Logger, apiKey, apiSecret string) *TestnetExec
 
 func (e *TestnetExecutor) Name() string { return "testnet" }
 
-func (e *TestnetExecutor) Positions() map[string]*Position { return e.positions }
+func (e *TestnetExecutor) Positions() map[string]*Position {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return copyPositions(e.positions)
+}
 
 // Init — фильтры биржи (stepSize/tickSize) + плечо по символам.
 // Фильтры кэшируются в paper_exchange_info.json: VPN периодически душит
@@ -173,9 +213,9 @@ func (e *TestnetExecutor) loadFilters(ctx context.Context) error {
 	// 1. свежий кэш?
 	if data, err := os.ReadFile(filtersCachePath); err == nil {
 		var cached struct {
-			SavedAt time.Time            `json:"saved_at"`
-			Steps   map[string]float64   `json:"steps"`
-			Ticks   map[string]float64   `json:"ticks"`
+			SavedAt time.Time          `json:"saved_at"`
+			Steps   map[string]float64 `json:"steps"`
+			Ticks   map[string]float64 `json:"ticks"`
 		}
 		if json.Unmarshal(data, &cached) == nil && time.Since(cached.SavedAt) < 7*24*time.Hour {
 			e.steps, e.ticks = cached.Steps, cached.Ticks
@@ -222,10 +262,10 @@ func (e *TestnetExecutor) fetchFilters(ctx context.Context) (map[string]float64,
 		Timeout: 60 * time.Second,
 		Transport: &http.Transport{
 			DisableKeepAlives: true,
-			DialContext: (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+			DialContext:       (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
 		},
 	}
-	resp, err := client.Get(testnetURL + "/fapi/v1/exchangeInfo")
+	resp, err := client.Get(e.baseURL + "/fapi/v1/exchangeInfo")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -288,176 +328,11 @@ func (e *TestnetExecutor) Equity(ctx context.Context) (float64, error) {
 	if err := e.signedGet(ctx, "/fapi/v2/account", nil, &acc); err != nil {
 		return 0, err
 	}
-	v, _ := strconv.ParseFloat(acc.TotalWalletBalance, 64)
+	v, err := strconv.ParseFloat(acc.TotalWalletBalance, 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, fmt.Errorf("invalid wallet balance")
+	}
 	return v, nil
-}
-
-func (e *TestnetExecutor) Open(ctx context.Context, sym string, dir int, qty, stop, take, refPrice float64) (float64, error) {
-	side := "BUY"
-	if dir < 0 {
-		side = "SELL"
-	}
-	qtyStr := e.fmtQty(sym, qty)
-	if qtyStr == "" {
-		return 0, fmt.Errorf("%s: qty %.6f меньше stepSize", sym, qty)
-	}
-	resp, err := e.signedPost(ctx, "/fapi/v1/order", map[string]string{
-		"symbol": sym, "side": side, "type": "MARKET", "quantity": qtyStr,
-	}, nil)
-	if err != nil {
-		return 0, fmt.Errorf("entry order: %w", err)
-	}
-	fill := respAvgPrice(resp, refPrice)
-	if fill <= 0 {
-		// MARKET исполняется асинхронно — дочитываем ордер по id
-		fill = e.fetchOrderPrice(ctx, sym, resp, refPrice)
-	}
-
-	// стоп и тейк — БИРЖЕВЫЕ algo-ордера (CONDITIONAL: STOP_MARKET / TAKE_PROFIT_MARKET).
-	// С дек-2025 условные ордера обязаны идти через /fapi/v1/algoOrder (-4120 на старом).
-	closeSide := "SELL"
-	if dir < 0 {
-		closeSide = "BUY"
-	}
-	placed := true
-	if stop > 0 {
-		if err := e.placeAlgo(ctx, sym, closeSide, "STOP_MARKET", stop); err != nil {
-			placed = false
-			e.log.Error("⚠️ стоп-ордер НЕ выставлен", "sym", sym, "err", err)
-		}
-	}
-	if take > 0 {
-		if err := e.placeAlgo(ctx, sym, closeSide, "TAKE_PROFIT_MARKET", take); err != nil {
-			placed = false
-			e.log.Error("⚠️ тейк-ордер НЕ выставлен", "sym", sym, "err", err)
-		}
-	}
-
-	e.positions[sym] = &Position{
-		Symbol: sym, Dir: dir, Qty: qty, EntryPrice: fill,
-		Stop: stop, Take: take, EntryTime: time.Now().UTC(),
-	}
-	if !placed {
-		// защита от голой позиции: SL/TP не встали — закрываем немедленно
-		e.log.Error("❌ SL/TP не встали — закрываю позицию немедленно", "sym", sym)
-		if _, cerr := e.signedPost(ctx, "/fapi/v1/order", map[string]string{
-			"symbol": sym, "side": closeSide, "type": "MARKET",
-			"quantity": qtyStr, "reduceOnly": "true",
-		}, nil); cerr != nil {
-			return fill, fmt.Errorf("naked position! close failed: %v (stop/take failed earlier)", cerr)
-		}
-		delete(e.positions, sym)
-		return fill, fmt.Errorf("SL/TP не встали, позиция закрыта")
-	}
-	e.log.Info("🟢 ОТКРЫТИЕ (testnet)", "sym", sym, "dir", dir, "qty", qtyStr,
-		"fill", round2(fill), "stop", round2(stop), "take", round2(take))
-	return fill, nil
-}
-
-// placeAlgo — условный ордер через Algo API (CONDITIONAL).
-func (e *TestnetExecutor) placeAlgo(ctx context.Context, symbol, side, algoType string, trigger float64) error {
-	params := map[string]string{
-		"symbol": symbol, "side": side, "type": algoType,
-		"algoType": "CONDITIONAL", "triggerPrice": e.fmtPrice(symbol, trigger),
-		"closePosition": "true", "workingType": "CONTRACT_PRICE",
-	}
-	resp, err := e.signedPost(ctx, "/fapi/v1/algoOrder", params, nil)
-	if err != nil {
-		return err
-	}
-	if code, ok := resp["code"].(float64); ok && code != 0 {
-		return fmt.Errorf("algo order code %v: %v", code, resp["msg"])
-	}
-	e.log.Info("   📎 ордер выставлен", "sym", symbol, "type", algoType, "trigger", e.fmtPrice(symbol, trigger))
-	return nil
-}
-
-// cancelAlgoOrders — снятие всех algo-ордеров по символу (best effort).
-func (e *TestnetExecutor) cancelAlgoOrders(ctx context.Context, sym string) {
-	params := map[string]string{"symbol": sym, "timestamp": strconv.FormatInt(time.Now().UnixMilli(), 10)}
-	if err := e.signedDelete(ctx, "/fapi/v1/algoOpenOrders", params); err != nil {
-		e.log.Warn("cancel algoOpenOrders", "sym", sym, "err", err)
-	}
-}
-
-func (e *TestnetExecutor) Close(ctx context.Context, sym string, refPrice float64) (float64, error) {
-	pos := e.positions[sym]
-	if pos == nil {
-		return 0, fmt.Errorf("нет позиции %s", sym)
-	}
-	// сначала снимаем SL/TP (обычные + algo), потом маркет-закрытие
-	if err := e.signedDelete(ctx, "/fapi/v1/allOpenOrders", map[string]string{"symbol": sym}); err != nil {
-		e.log.Warn("cancel allOpenOrders", "sym", sym, "err", err)
-	}
-	e.cancelAlgoOrders(ctx, sym)
-	side := "SELL"
-	if pos.Dir < 0 {
-		side = "BUY"
-	}
-	resp, err := e.signedPost(ctx, "/fapi/v1/order", map[string]string{
-		"symbol": sym, "side": side, "type": "MARKET",
-		"quantity": e.fmtQty(sym, pos.Qty), "reduceOnly": "true",
-	}, nil)
-	if err != nil {
-		return 0, fmt.Errorf("close order: %w", err)
-	}
-	fill := respAvgPrice(resp, refPrice)
-	delete(e.positions, sym)
-	e.log.Info("🔴 ЗАКРЫТИЕ (testnet)", "sym", sym, "fill", round2(fill))
-	return fill, nil
-}
-
-// Reconcile — сверка локального кэша с биржей после рестарта.
-// Запрос идёт по символам: полный positionRisk (700+ символов) режется VPN.
-func (e *TestnetExecutor) Reconcile(ctx context.Context, symbols []string) error {
-	seen := map[string]bool{}
-	for _, sym := range symbols {
-		var pr []struct {
-			Symbol      string `json:"symbol"`
-			PositionAmt string `json:"positionAmt"`
-			EntryPrice  string `json:"entryPrice"`
-		}
-		var lastErr error
-		for attempt := 0; attempt < 3; attempt++ {
-			err := e.signedGet(ctx, "/fapi/v2/positionRisk", map[string]string{"symbol": sym}, &pr)
-			if err == nil {
-				lastErr = nil
-				break
-			}
-			lastErr = err
-			time.Sleep(2 * time.Second)
-		}
-		if lastErr != nil {
-			return fmt.Errorf("reconcile %s: %w", sym, lastErr)
-		}
-		for _, p := range pr {
-			seen[p.Symbol] = true
-			amt, _ := strconv.ParseFloat(p.PositionAmt, 64)
-			ep, _ := strconv.ParseFloat(p.EntryPrice, 64)
-			if amt == 0 {
-				delete(e.positions, p.Symbol)
-				continue
-			}
-			dir := 1
-			if amt < 0 {
-				dir = -1
-			}
-			if e.positions[p.Symbol] == nil {
-				e.log.Warn("позиция на бирже без локального состояния — подхватываю без SL/TP", "sym", p.Symbol)
-			}
-			e.positions[p.Symbol] = &Position{
-				Symbol: p.Symbol, Dir: dir, Qty: math.Abs(amt), EntryPrice: ep,
-				EntryTime: time.Now().UTC(),
-			}
-		}
-	}
-	// локальные позиции по символам, которых нет на бирже, — сбросить
-	for sym := range e.positions {
-		if !seen[sym] {
-			delete(e.positions, sym)
-		}
-	}
-	return nil
 }
 
 // LastPrice — последняя цена (публичный эндпоинт).
@@ -478,11 +353,18 @@ func (e *TestnetExecutor) LastPrice(ctx context.Context, sym string) (float64, e
 // --- HTTP helpers ---
 
 func (e *TestnetExecutor) publicGet(ctx context.Context, path string, out any) error {
-	resp, err := httpClient.Get(testnetURL + path)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.baseURL+path, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := e.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
@@ -507,7 +389,7 @@ func (e *TestnetExecutor) signedPost(ctx context.Context, path string, params ma
 		params = map[string]string{}
 	}
 	params["timestamp"] = strconv.FormatInt(time.Now().UnixMilli(), 10)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, testnetURL+path+"?"+e.sign(params), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.baseURL+path+"?"+e.sign(params), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +402,7 @@ func (e *TestnetExecutor) signedGet(ctx context.Context, path string, params map
 		params = map[string]string{}
 	}
 	params["timestamp"] = strconv.FormatInt(time.Now().UnixMilli(), 10)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, testnetURL+path+"?"+e.sign(params), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, e.baseURL+path+"?"+e.sign(params), nil)
 	if err != nil {
 		return err
 	}
@@ -534,7 +416,7 @@ func (e *TestnetExecutor) signedGet(ctx context.Context, path string, params map
 
 func (e *TestnetExecutor) signedDelete(ctx context.Context, path string, params map[string]string) error {
 	params["timestamp"] = strconv.FormatInt(time.Now().UnixMilli(), 10)
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, testnetURL+path+"?"+e.sign(params), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, e.baseURL+path+"?"+e.sign(params), nil)
 	if err != nil {
 		return err
 	}
@@ -549,21 +431,29 @@ func (e *TestnetExecutor) do(req *http.Request) (map[string]any, error) {
 		return nil, err
 	}
 	var m map[string]any
-	if err := json.Unmarshal(body, &m); err != nil {
-		return map[string]any{}, nil // DELETE и пустые ответы
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&m); err != nil {
+		return nil, err
 	}
 	return m, nil
 }
 
 func (e *TestnetExecutor) doRaw(req *http.Request) ([]byte, error) {
-	resp, err := httpClient.Do(req)
+	resp, err := e.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		var apiErr exchangeError
+		_ = json.Unmarshal(body, &apiErr)
+		apiErr.HTTPStatus = resp.StatusCode
+		return nil, &apiErr
 	}
 	return body, nil
 }
@@ -573,7 +463,7 @@ func (e *TestnetExecutor) fmtQty(sym string, qty float64) string {
 	if step <= 0 {
 		step = 0.001
 	}
-	qty = math.Floor(qty/step) * step
+	qty = math.Floor(qty/step+1e-9) * step
 	if qty <= 0 {
 		return ""
 	}
@@ -585,49 +475,18 @@ func (e *TestnetExecutor) fmtPrice(sym string, price float64) string {
 	if tick <= 0 {
 		tick = 0.01
 	}
-	return strconv.FormatFloat(price, 'f', decimals(tick), 64)
+	return strconv.FormatFloat(math.Round(price/tick)*tick, 'f', decimals(tick), 64)
 }
 
 func decimals(step float64) int {
-	d := 0
-	for step < 1 {
+	for d := 0; d < 12; d++ {
+		nearest := math.Round(step)
+		if nearest >= 1 && math.Abs(step-nearest) <= 1e-9*math.Max(1, math.Abs(step)) {
+			return d
+		}
 		step *= 10
-		d++
 	}
-	return d
-}
-
-func respAvgPrice(resp map[string]any, fallback float64) float64 {
-	if s, ok := resp["avgPrice"].(string); ok {
-		if v, err := strconv.ParseFloat(s, 64); err == nil && v > 0 {
-			return v
-		}
-	}
-	return fallback
-}
-
-// fetchOrderPrice — цена исполнения MARKET-ордера через GET /fapi/v1/order.
-func (e *TestnetExecutor) fetchOrderPrice(ctx context.Context, sym string, resp map[string]any, fallback float64) float64 {
-	orderID, _ := resp["orderId"].(float64)
-	if orderID == 0 {
-		return fallback
-	}
-	for attempt := 0; attempt < 5; attempt++ {
-		time.Sleep(400 * time.Millisecond)
-		var ord struct {
-			AvgPrice string `json:"avgPrice"`
-		}
-		err := e.signedGet(ctx, "/fapi/v1/order", map[string]string{
-			"symbol": sym, "orderId": strconv.FormatInt(int64(orderID), 10),
-		}, &ord)
-		if err != nil {
-			continue
-		}
-		if v, err := strconv.ParseFloat(ord.AvgPrice, 64); err == nil && v > 0 {
-			return v
-		}
-	}
-	return fallback
+	return 12
 }
 
 func round2(x float64) float64 { return math.Round(x*100) / 100 }

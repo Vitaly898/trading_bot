@@ -10,9 +10,10 @@ import (
 // Смена режима при открытой позиции другого модуля = немедленное закрытие.
 //
 // Параметры (yaml params):
-//   классификатор: adx_enter/adx_exit/er_enter/er_exit/er_period/min_bars
-//   trend_*: параметры trend (trend_ma_type, trend_fast, trend_slow, trend_adx_min, ...)
-//   mr_*:    параметры vwap_revert (mr_dev_mult, mr_oversold, mr_time_stop, ...)
+//
+//	классификатор: adx_enter/adx_exit/er_enter/er_exit/er_period/min_bars
+//	trend_*: параметры trend (trend_ma_type, trend_fast, trend_slow, trend_adx_min, ...)
+//	mr_*:    параметры vwap_revert (mr_dev_mult, mr_oversold, mr_time_stop, ...)
 type RegimeSwitch struct {
 	clf   *RegimeClassifier
 	trend *Trend
@@ -52,7 +53,7 @@ func prefixed(p Params, prefix string) Params {
 	return out
 }
 
-func (s *RegimeSwitch) OnPositionChange(dir int, _ string) {
+func (s *RegimeSwitch) OnPositionChange(dir int, reason string) {
 	if dir != 0 {
 		s.posDir = dir
 		s.posFrom = s.nextOwner
@@ -64,9 +65,9 @@ func (s *RegimeSwitch) OnPositionChange(dir int, _ string) {
 		return
 	}
 	if s.posFrom == "mr" {
-		s.mr.OnPositionChange(0, "")
+		s.mr.OnPositionChange(0, reason)
 	} else {
-		s.trend.OnPositionChange(0, "")
+		s.trend.OnPositionChange(0, reason)
 	}
 	s.posDir = 0
 	s.posFrom = ""
@@ -124,4 +125,3 @@ func (s *RegimeSwitch) OnCandle(c candle.Candle) (int, float64, float64) {
 	}
 	return md, ms, mt
 }
-

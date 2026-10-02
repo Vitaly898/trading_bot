@@ -16,6 +16,8 @@
 *.log
 nohup.out
 bot/paper_state.json
+bot/paper*_state.json
+bot/.paper-state-*
 bot/paper_exchange_info.json
 bot/charts/
 
