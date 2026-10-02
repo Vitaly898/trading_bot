@@ -18,10 +18,15 @@ type position struct {
 	funding    float64 // накопленный funding по позиции (отрицательный = платили)
 }
 
+// markPnL includes accrued costs without settling them twice at close.
+func (p *position) markPnL(price float64) float64 {
+	return float64(p.dir)*(price-p.entryPrice)*p.qty - p.fees + p.funding
+}
+
 // Run — прогон стратегии по свечам. Исполнение: по закрытию сигнальной свечи
 // с проскальзыванием. Стоп: срабатывает при касании внутри следующих свечей.
 func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Funding) *Report {
-	rep := &Report{Config: cfg}
+	rep := &Report{Config: cfg, FinalEquity: cfg.StartEquity}
 	if len(candles) == 0 {
 		return rep
 	}
@@ -51,8 +56,6 @@ func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Fun
 	var pos *position
 	fundIdx := 0
 
-	peak := equity
-	maxDD := 0.0
 	timeInMarket := 0
 
 	equityCurve := make([]float64, 0, len(candles))
@@ -69,7 +72,7 @@ func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Fun
 		equity += pnl
 		rep.Trades = append(rep.Trades, Trade{
 			Symbol: cfg.Symbol,
-			Dir: pos.dir, EntryTime: pos.entryTime, ExitTime: t,
+			Dir:    pos.dir, EntryTime: pos.entryTime, ExitTime: t,
 			EntryPrice: pos.entryPrice, ExitPrice: fill, Qty: pos.qty,
 			PnL: pnl, Fees: pos.fees, Funding: pos.funding, ExitReason: reason,
 		})
@@ -79,7 +82,7 @@ func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Fun
 		notify(0, reason)
 	}
 
-	for i, c := range candles {
+	for _, c := range candles {
 		// 1. Funding между предыдущей и текущей свечой
 		for fundIdx < len(funding) && !funding[fundIdx].CalcTime.After(c.Time) {
 			f := funding[fundIdx]
@@ -150,25 +153,19 @@ func Run(cfg Config, strat Strategy, candles []candle.Candle, funding []data.Fun
 		}
 		mark := equity
 		if pos != nil {
-			mark += float64(pos.dir) * (c.C - pos.entryPrice) * pos.qty
+			mark += pos.markPnL(c.C)
 		}
 		equityCurve = append(equityCurve, mark)
-		if mark > peak {
-			peak = mark
-		}
-		if dd := (peak - mark) / peak; dd > maxDD {
-			maxDD = dd
-		}
-		_ = i
 	}
 
 	if pos != nil {
 		closePos(candles[len(candles)-1].C, candles[len(candles)-1].Time, "end")
+		equityCurve[len(equityCurve)-1] = equity
 	}
 
 	rep.FinalEquity = equity
 	rep.TotalReturn = equity/cfg.StartEquity - 1
-	rep.MaxDrawdown = maxDD
+	rep.MaxDrawdown = maxDrawdown(cfg.StartEquity, equityCurve)
 	if len(equityCurve) > 0 {
 		rep.ExposurePct = 100 * float64(timeInMarket) / float64(len(equityCurve))
 	}

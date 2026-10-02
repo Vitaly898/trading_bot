@@ -31,6 +31,7 @@ func (e *ER) Next(c talive.OHLCV) []float64 {
 	for i := 1; i < len(e.closes); i++ {
 		vol += absF(e.closes[i] - e.closes[i-1])
 	}
+	e.out[0] = 0
 	if vol > 0 {
 		e.out[0] = change / vol
 	}
@@ -38,16 +39,17 @@ func (e *ER) Next(c talive.OHLCV) []float64 {
 }
 
 func (e *ER) Current(c talive.OHLCV) []float64 {
-	snapshot := append([]float64{}, e.closes...)
-	out := e.Next(c)
-	e.closes = snapshot
-	return out
+	// Preview on independent buffers; neither history nor committed output changes.
+	preview := *e
+	preview.closes = append([]float64(nil), e.closes...)
+	preview.out = []float64{e.out[0]}
+	return preview.Next(c)
 }
 
-func (e *ER) IsIdle() bool        { return len(e.closes) < e.period+1 }
-func (e *ER) IdlePeriod() int     { return e.period + 1 }
-func (e *ER) IsWarmedUp() bool    { return !e.IsIdle() }
-func (e *ER) WarmUpPeriod() int   { return e.period + 1 }
+func (e *ER) IsIdle() bool      { return len(e.closes) < e.period+1 }
+func (e *ER) IdlePeriod() int   { return e.period + 1 }
+func (e *ER) IsWarmedUp() bool  { return !e.IsIdle() }
+func (e *ER) WarmUpPeriod() int { return e.period + 1 }
 
 func absF(x float64) float64 {
 	if x < 0 {
