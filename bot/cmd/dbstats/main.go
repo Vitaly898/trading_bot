@@ -1,6 +1,7 @@
 // dbstats — проверка содержимого локальной базы: покрытие, разрывы, funding.
 // Пример:
-//   go run ./cmd/dbstats -symbol BTCUSDT -tfs 15m,1h,4h -db history.db
+//
+//	go run ./cmd/dbstats -symbol BTCUSDT -tfs 15m,1h,4h -db history.db
 package main
 
 import (
@@ -18,7 +19,7 @@ func main() {
 	dbPath := flag.String("db", "history.db", "путь к SQLite базе")
 	flag.Parse()
 
-	db, err := store.Open(*dbPath)
+	db, err := store.OpenReadOnly(*dbPath)
 	if err != nil {
 		log.Fatal(err)
 	}

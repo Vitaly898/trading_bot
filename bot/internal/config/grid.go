@@ -5,8 +5,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
 
 // SweepFile — файл сетки параметров для sweep/walk-forward.
@@ -22,8 +20,19 @@ func LoadSweep(path string) (*SweepFile, error) {
 		return nil, err
 	}
 	var sf SweepFile
-	if err := yaml.Unmarshal(raw, &sf); err != nil {
+	if err := decode(raw, &sf); err != nil {
 		return nil, fmt.Errorf("парсинг %s: %w", path, err)
+	}
+	if strings.TrimSpace(sf.Base) == "" {
+		return nil, fmt.Errorf("%s: base is required", path)
+	}
+	if sf.Top < 0 {
+		return nil, fmt.Errorf("%s: top must be nonnegative", path)
+	}
+	for key, values := range sf.Grid {
+		if key == "" || len(values) == 0 {
+			return nil, fmt.Errorf("%s: empty grid axis %q", path, key)
+		}
 	}
 	if len(sf.Grid) == 0 {
 		return nil, fmt.Errorf("%s: пустая grid", path)
@@ -69,4 +78,17 @@ func FmtParams(p map[string]any) string {
 		parts = append(parts, fmt.Sprintf("%s=%v", k, p[k]))
 	}
 	return strings.Join(parts, " ")
+}
+
+// ValidateGrid checks all combinations against the active base strategy.
+func ValidateGrid(base *Config, combinations []map[string]any) error {
+	if len(combinations) == 0 {
+		return fmt.Errorf("empty parameter grid")
+	}
+	for _, params := range combinations {
+		if _, err := base.WithParams(params); err != nil {
+			return fmt.Errorf("grid %s: %w", FmtParams(params), err)
+		}
+	}
+	return nil
 }

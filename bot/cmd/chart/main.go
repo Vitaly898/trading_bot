@@ -1,7 +1,8 @@
 // chart — визуализация сделок бэктеста: свечи + маркеры входов/выходов + equity.
 // Генерирует автономные HTML (Lightweight Charts от TradingView) в ./charts/.
-//   go run ./cmd/chart -config configs/portfolio_4h.yaml
-//   go run ./cmd/chart -config configs/walkforward/champion.yaml -symbol BTCUSDT
+//
+//	go run ./cmd/chart -config configs/portfolio_4h.yaml
+//	go run ./cmd/chart -config configs/walkforward/champion.yaml -symbol BTCUSDT
 package main
 
 import (
@@ -35,7 +36,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	db, err := store.Open(cc.DB)
+	db, err := store.OpenReadOnly(cc.DB)
 	if err != nil {
 		log.Fatal(err)
 	}

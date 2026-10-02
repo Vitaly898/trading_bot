@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"bot/internal/backtest"
 	"bot/internal/candle"
+	"bot/internal/trading"
 )
 
 func TestRegimePositionRestorePreservesOwnerAndTimeStop(t *testing.T) {
@@ -13,14 +13,14 @@ func TestRegimePositionRestorePreservesOwnerAndTimeStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	state := backtest.PositionState{Dir: 1, Owner: "mr", BarsIn: 9}
+	state := trading.PositionState{Dir: 1, Owner: "mr", BarsIn: 9}
 	if err := s.RestorePosition(state); err != nil {
 		t.Fatal(err)
 	}
 	if s.PositionState() != state || s.mr.posDir != 1 || s.mr.barsIn != 9 || s.trend.posDir != 0 {
 		t.Fatalf("restored state: %+v", s.PositionState())
 	}
-	if err := s.RestorePosition(backtest.PositionState{Dir: 1}); err == nil {
+	if err := s.RestorePosition(trading.PositionState{Dir: 1}); err == nil {
 		t.Fatal("unknown owner accepted")
 	}
 	s.OnPositionChange(0, "stop")
@@ -38,7 +38,7 @@ func TestVWAPRestoredBarsTriggerTimeStop(t *testing.T) {
 		for i := 0; i < 6; i++ {
 			s.OnCandle(candle.Candle{Time: start.Add(time.Duration(i) * time.Minute), O: 200, H: 201, L: 199, C: 200, V: 1})
 		}
-		if err := s.RestorePosition(backtest.PositionState{Dir: 1, BarsIn: bars}); err != nil {
+		if err := s.RestorePosition(trading.PositionState{Dir: 1, BarsIn: bars}); err != nil {
 			t.Fatal(err)
 		}
 		dir, _, _ := s.OnCandle(candle.Candle{Time: start.Add(6 * time.Minute), O: 100, H: 101, L: 99, C: 100, V: 1})

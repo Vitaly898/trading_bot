@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"bot/internal/backtest"
+	"bot/internal/trading"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -228,7 +228,7 @@ func TestRunnerReconcileNotifiesExchangeCloseOnce(t *testing.T) {
 	})
 	e.positions["TEST"] = existingPosition()
 	r := NewRunner(quietLog(), runnerConfig(""), e)
-	r.positionStates["TEST"] = backtest.PositionState{Dir: 1, Owner: "mr"}
+	r.positionStates["TEST"] = trading.PositionState{Dir: 1, Owner: "mr"}
 	s := &recordingStrategy{}
 	if err := r.RegisterStrategy("TEST", s); err != nil {
 		t.Fatal(err)
@@ -268,7 +268,7 @@ func TestEntryIntentIsSavedBeforeSubmission(t *testing.T) {
 		return nil, nil
 	})
 	r := NewRunner(quietLog(), runnerConfig(path), e)
-	r.positionStates["TEST"] = backtest.PositionState{Dir: 1, Owner: "mr"}
+	r.positionStates["TEST"] = trading.PositionState{Dir: 1, Owner: "mr"}
 	if _, err := e.Open(context.Background(), "TEST", 1, 1, 90, 0, 100); err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +381,7 @@ func TestRestartResolvesPersistedEntryWithoutResubmission(t *testing.T) {
 	})
 	e := testExecutor(transport)
 	r := NewRunner(quietLog(), runnerConfig(path), e)
-	r.positionStates["TEST"] = backtest.PositionState{Dir: 1, Owner: "mr"}
+	r.positionStates["TEST"] = trading.PositionState{Dir: 1, Owner: "mr"}
 	r.entryBars["TEST"] = event(0, 100, true).Candle.Time
 	r.lastClosed["TEST"] = r.entryBars["TEST"]
 	if _, err := e.Open(context.Background(), "TEST", 1, 1, 90, 0, 100); err != nil {

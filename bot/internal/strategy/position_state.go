@@ -3,23 +3,23 @@ package strategy
 import (
 	"fmt"
 
-	"bot/internal/backtest"
+	"bot/internal/trading"
 )
 
-func validPositionState(p backtest.PositionState) error {
+func validPositionState(p trading.PositionState) error {
 	if p.Dir < -1 || p.Dir > 1 || p.BarsIn < 0 {
 		return fmt.Errorf("invalid position state: %+v", p)
 	}
 	return nil
 }
 
-func (s *Trend) PositionState() backtest.PositionState {
-	return backtest.PositionState{Dir: s.posDir}
+func (s *Trend) PositionState() trading.PositionState {
+	return trading.PositionState{Dir: s.posDir}
 }
-func (s *Trend) EntryState(dir int) backtest.PositionState {
-	return backtest.PositionState{Dir: dir}
+func (s *Trend) EntryState(dir int) trading.PositionState {
+	return trading.PositionState{Dir: dir}
 }
-func (s *Trend) RestorePosition(p backtest.PositionState) error {
+func (s *Trend) RestorePosition(p trading.PositionState) error {
 	if err := validPositionState(p); err != nil {
 		return err
 	}
@@ -27,13 +27,13 @@ func (s *Trend) RestorePosition(p backtest.PositionState) error {
 	return nil
 }
 
-func (s *VWAPRevert) PositionState() backtest.PositionState {
-	return backtest.PositionState{Dir: s.posDir, BarsIn: s.barsIn}
+func (s *VWAPRevert) PositionState() trading.PositionState {
+	return trading.PositionState{Dir: s.posDir, BarsIn: s.barsIn}
 }
-func (s *VWAPRevert) EntryState(dir int) backtest.PositionState {
-	return backtest.PositionState{Dir: dir}
+func (s *VWAPRevert) EntryState(dir int) trading.PositionState {
+	return trading.PositionState{Dir: dir}
 }
-func (s *VWAPRevert) RestorePosition(p backtest.PositionState) error {
+func (s *VWAPRevert) RestorePosition(p trading.PositionState) error {
 	if err := validPositionState(p); err != nil {
 		return err
 	}
@@ -41,17 +41,17 @@ func (s *VWAPRevert) RestorePosition(p backtest.PositionState) error {
 	return nil
 }
 
-func (s *RegimeSwitch) PositionState() backtest.PositionState {
-	p := backtest.PositionState{Dir: s.posDir, Owner: s.posFrom}
+func (s *RegimeSwitch) PositionState() trading.PositionState {
+	p := trading.PositionState{Dir: s.posDir, Owner: s.posFrom}
 	if s.posFrom == "mr" {
 		p.BarsIn = s.mr.barsIn
 	}
 	return p
 }
-func (s *RegimeSwitch) EntryState(dir int) backtest.PositionState {
-	return backtest.PositionState{Dir: dir, Owner: s.nextOwner}
+func (s *RegimeSwitch) EntryState(dir int) trading.PositionState {
+	return trading.PositionState{Dir: dir, Owner: s.nextOwner}
 }
-func (s *RegimeSwitch) RestorePosition(p backtest.PositionState) error {
+func (s *RegimeSwitch) RestorePosition(p trading.PositionState) error {
 	if err := validPositionState(p); err != nil {
 		return err
 	}

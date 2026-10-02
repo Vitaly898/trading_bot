@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"bot/internal/candle"
-	"bot/internal/data"
+	"bot/internal/market"
 )
 
 type testSignal struct {
@@ -85,7 +85,7 @@ func TestRunCostsAndFunding(t *testing.T) {
 				mark := 100 + float64(dir)*10
 				cs := bars(100, mark, mark)
 				st := &scriptedStrategy{signals: []testSignal{{dir, 100 - float64(dir)*10, 0}, {dir, 0, 0}}}
-				fs := []data.Funding{{CalcTime: cs[1].Time, Rate: 0.001}}
+				fs := []market.Funding{{CalcTime: cs[1].Time, Rate: 0.001}}
 				r := Run(cfg, st, cs, fs)
 				entry := 100 * (1 + float64(dir)*0.01)
 				exit := mark * (1 - float64(dir)*0.01)
@@ -192,5 +192,14 @@ func TestRunNoTradingPreservesCapital(t *testing.T) {
 		near(t, r.FinalEquity, cfg.StartEquity)
 		near(t, r.TotalReturn, 0)
 		reconciles(t, r)
+	}
+}
+
+func TestRunDoesNotOpenWithExhaustedCapital(t *testing.T) {
+	cfg := testConfig()
+	cfg.StartEquity = 0
+	rep := Run(cfg, &scriptedStrategy{signals: []testSignal{{dir: 1, stop: 90}}}, bars(100, 110), nil)
+	if len(rep.Trades) != 0 || rep.FinalEquity != 0 {
+		t.Fatalf("zero-capital position: %+v", rep)
 	}
 }

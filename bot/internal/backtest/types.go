@@ -5,39 +5,14 @@ package backtest
 import (
 	"time"
 
-	"bot/internal/candle"
+	"bot/internal/trading"
 )
 
-// Strategy — интерфейс стратегии. Вызывается на каждой закрытой свече.
-type Strategy interface {
-	// OnCandle возвращает целевое направление: +1 long, -1 short, 0 — вне рынка.
-	// stopPrice — цена стопа для НОВОЙ позиции (0 — без стопа).
-	// takePrice — цена тейка для НОВОЙ позиции (0 — без тейка).
-	// Если направление совпадает с текущим, stopPrice/takePrice игнорируются
-	// (уровни не двигаются; трейлинг — TODO).
-	OnCandle(c candle.Candle) (dir int, stopPrice, takePrice float64)
-}
-
-// PositionAware — опциональный интерфейс стратегии: движок сообщает
-// фактическое состояние позиции после каждого открытия/закрытия.
-// dir: +1, -1 или 0. exitReason: причина закрытия ("stop","take","signal","end")
-// — пустая при открытии. Нужен для выходов «в позиции» и cooldown после стопа.
-type PositionAware interface {
-	OnPositionChange(dir int, exitReason string)
-}
-
-// FundingAware — опциональный интерфейс стратегии: движок передаёт
-// каждое funding-событие по мере его наступления (без заглядывания вперёд).
-// Стратегия может строить MM-фильтры (вето по экстремальному funding и т.п.)
-type FundingAware interface {
-	OnFunding(rate float64, t time.Time)
-}
-
-// DiagnosticsProvider — опциональный интерфейс: стратегия отдаёт значения
-// своих индикаторов (для логирования контекста открытия сделки).
-type DiagnosticsProvider interface {
-	Diagnostics() map[string]any
-}
+// Strategy contracts live in trading; aliases preserve engine callers.
+type Strategy = trading.Strategy
+type PositionAware = trading.PositionAware
+type FundingAware = trading.FundingAware
+type DiagnosticsProvider = trading.DiagnosticsProvider
 
 // Config — параметры прогона.
 type Config struct {
@@ -83,14 +58,14 @@ type Report struct {
 	TotalReturn float64 // доля
 	MaxDrawdown float64 // доля (положительное число)
 
-	Trades      []Trade
-	Wins        int
-	Losses      int
-	WinRate     float64
+	Trades       []Trade
+	Wins         int
+	Losses       int
+	WinRate      float64
 	ProfitFactor float64
-	Expectancy  float64 // средний PnL на сделку, USDT
-	AvgWin      float64
-	AvgLoss     float64 // отрицательное
+	Expectancy   float64 // средний PnL на сделку, USDT
+	AvgWin       float64
+	AvgLoss      float64 // отрицательное
 
 	TotalFees    float64
 	TotalFunding float64

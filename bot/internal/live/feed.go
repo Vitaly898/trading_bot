@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"bot/internal/candle"
+	"bot/internal/market"
 
 	"github.com/gorilla/websocket"
 )
@@ -29,7 +30,7 @@ var httpClient = &http.Client{
 	Timeout: 30 * time.Second,
 	Transport: &http.Transport{
 		DisableKeepAlives: true,
-		DialContext: (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
+		DialContext:       (&net.Dialer{Timeout: 10 * time.Second}).DialContext,
 	},
 }
 
@@ -88,17 +89,8 @@ func f(v any) float64 {
 }
 
 func tfDur(interval string) time.Duration {
-	var n int
-	fmt.Sscanf(interval, "%d", &n)
-	switch interval[len(interval)-1] {
-	case 'm':
-		return time.Duration(n) * time.Minute
-	case 'h':
-		return time.Duration(n) * time.Hour
-	case 'd':
-		return time.Duration(n) * 24 * time.Hour
-	}
-	return time.Hour
+	duration, _ := market.Interval(interval) // caller validates config before starting feeds
+	return duration
 }
 
 // StreamKlines — подписка на kline_<interval> по символам, шлёт в out.
@@ -245,7 +237,7 @@ func streamOnce(ctx context.Context, log *slog.Logger, symbols []string, interva
 			Candle: candle.Candle{
 				Time: time.UnixMilli(km.Kline.StartTime).UTC(),
 				O:    pf(km.Kline.Open), H: pf(km.Kline.High),
-				L:    pf(km.Kline.Low), C: pf(km.Kline.Close), V: pf(km.Kline.Volume),
+				L: pf(km.Kline.Low), C: pf(km.Kline.Close), V: pf(km.Kline.Volume),
 			},
 			IsClosed: km.Kline.IsClosed,
 		}:

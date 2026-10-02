@@ -5,8 +5,9 @@ import (
 	"sort"
 	"time"
 
+	"bot/internal/accounting"
 	"bot/internal/candle"
-	"bot/internal/data"
+	"bot/internal/market"
 )
 
 // PortfolioConfig — параметры портфельного прогона.
@@ -20,7 +21,7 @@ type PortfolioConfig struct {
 type SymbolData struct {
 	Symbol  string
 	Candles []candle.Candle
-	Funding []data.Funding
+	Funding []market.Funding
 }
 
 // portfolioPosition — позиция в портфеле: базовая позиция + дистанция стопа
@@ -98,9 +99,9 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 		}
 		pos := pp.position
 		fill := applySlippage(price, -pos.dir, cfg.SlippagePct)
-		exitFee := fill * pos.qty * cfg.TakerFeePct
+		exitFee := accounting.Fee(fill, pos.qty, cfg.TakerFeePct)
 		pos.fees += exitFee
-		gross := float64(pos.dir) * (fill - pos.entryPrice) * pos.qty
+		gross := accounting.Gross(pos.dir, pos.entryPrice, fill, pos.qty)
 		pnl := gross - pos.fees + pos.funding
 		equity += pnl
 		rep.Trades = append(rep.Trades, Trade{
@@ -174,19 +175,14 @@ func RunPortfolio(cfg PortfolioConfig, mkStrategy func(sym string) Strategy, ds 
 			}
 			if dir != 0 && active(c.Time) && (cfg.MaxPositions == 0 || len(positions) < cfg.MaxPositions) {
 				entry := applySlippage(c.C, dir, cfg.SlippagePct)
-				stopDist := entry * 0.02
-				if stopPrice > 0 {
-					if d := abs(entry - stopPrice); d > 0 {
-						stopDist = d
-					}
-				}
-				qty := equity * cfg.RiskPct / stopDist
+				stopDist := accounting.StopDistance(entry, stopPrice)
+				qty := accounting.Quantity(equity, cfg.RiskPct, stopDist)
 				// бюджет риска: суммарный риск открытых + новый ≤ лимита
 				if cfg.MaxTotalRisk > 0 && openRisk()+qty*stopDist > cfg.MaxTotalRisk*equity {
 					qty = 0 // вход запрещён бюджетом
 				}
 				if qty > 0 {
-					entryFee := entry * qty * cfg.TakerFeePct
+					entryFee := accounting.Fee(entry, qty, cfg.TakerFeePct)
 					positions[sym] = &portfolioPosition{
 						position: &position{
 							dir: dir, qty: qty, entryPrice: entry,
